@@ -1,0 +1,2250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template for all lambda functions in production
+Parameters:
+  Environment:
+    Description: 'Environment: dev,qa,stg,prod' 
+    Type: String
+    Default: 'prod'
+    AllowedValues:
+      - dev
+      - qa
+      - stg
+      - prod
+    ConstraintDescription: must be either 'dev','qa','stg' or 'prod'
+  ReadCapacityUnits:
+    Description: Provisioned read throughput
+    Type: Number
+    Default: '1'
+    MinValue: '1'
+    MaxValue: '10'
+    ConstraintDescription: must be between 1 and 10
+  
+  WriteCapacityUnits:
+    Description: Provisioned write throughput
+    Type: Number
+    Default: '1'
+    MinValue: '1'
+    MaxValue: '10'
+    ConstraintDescription: must be between 1 and 10
+  S3BucketName:
+    Description: The S3 bucket that contains the application code.
+    Type: String
+    Default: 'dev.telematics.inartifacts'
+  
+Mappings:
+  dev:
+    Layer:
+      "VpcId": "vpc-1081ac74"
+      "SubnetId1": "subnet-dd038785"
+      "SubnetId2": "subnet-bc28a093"
+      "SecurityGroupID": "sg-9bad17e3"
+      "PubSubnetId1": "subnet-a04ee1f8"
+      "PubSubnetId2": "subnet-191faa33"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "7"
+      "secretsmanager": "telematics/rdsaccess"
+      "SecretString": "dev"
+            
+  qa:
+    Layer:
+      "VpcId": "vpc-9ad5dafe"
+      "SubnetId1": "subnet-86e163de"
+      "SubnetId2": "subnet-b0813a9a"
+      "SecurityGroupID": "sg-9ecb8fe6"
+      "PubSubnetId1": "subnet-a6e062fe"
+      "PubSubnetId2": "subnet-2482390e"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "7"
+      "secretsmanager": "telematics/qardsaccess"
+      "SecretString": "qa"
+
+  stg:
+    Layer:
+      "VpcId": "vpc-a29785c6"
+      "SubnetId1": "subnet-f54d3383"
+      "SubnetId2": "subnet-073b377bfb81584f4"
+      "PubSubnetId1": "subnet-024f3174"
+      "PubSubnetId2": "subnet-85f0bcb8"
+      "SecurityGroupID": "sg-9bad17e3"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "14"
+      "secretsmanager": "telematics/stgrdsaccess"
+      "SecretString": "stg"
+
+  prod:
+    Layer:
+      "VpcId": "vpc-e8ece28c"
+      "SubnetId1": "subnet-003a7212aaed0e083"
+      "SubnetId2": "subnet-07a8a00481799a6c2"
+      "SecurityGroupID": "sg-9bad17e3"
+      "PubSubnetId1": "subnet-cb7e0bbd"
+      "PubSubnetId2": "subnet-0ece4356"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "30"
+      "secretsmanager": "telematics/prodrdsaccess"
+      "SecretString": "prod"
+
+Resources:
+
+  LambdaSG:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Lambda SG
+      VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '9094'
+        ToPort: '9094'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '2181'
+        ToPort: '2181'
+        CidrIp: 10.0.0.0/8
+      SecurityGroupEgress:
+      - IpProtocol: "All"
+        CidrIp: 0.0.0.0/0
+      GroupName:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - lambda-security-group
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Security Group"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+                - '-'
+                - - Ref: Environment
+                  - lambda-security-group
+
+  telematicsbatchupdateequipmentcustomname:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-batchupdate-equipmentcustomname
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-batchupdate-equipmentcustomname
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.equipment.UpdateCustomEquipmentName::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/batch-update-equipmentcustomname/batch-update-equipmentcustomname-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 900
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  EquipmentbatchupdateRule:
+    Type: AWS::Events::Rule
+    DependsOn:  
+       - telematicsbatchupdateequipmentcustomname
+    Properties:
+      Description: Used for Scheduled events for lambda
+      Name:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-equipment-batchupdate
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt telematicsbatchupdateequipmentcustomname.Arn
+          Id: lambda-function
+          Input: '[{"Constant" : "prod"}]'
+      ScheduleExpression: rate(1 day)
+      EventPattern: ""
+      
+      
+      
+  EventBridgeLambdaPermissionBatch:
+    Type: AWS::Lambda::Permission
+    Properties:
+        FunctionName: !Ref telematicsbatchupdateequipmentcustomname
+        Action: lambda:InvokeFunction
+        Principal: events.amazonaws.com
+        SourceArn: !GetAtt EquipmentbatchupdateRule.Arn
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for telematicsbatchupdateequipmentcustomname Log Grop
+  #-----------------------------------------------------------------------------
+  
+  telematicsbatchupdateequipmentcustomnamelog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: telematicsbatchupdateequipmentcustomname
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${telematicsbatchupdateequipmentcustomname}"
+      RetentionInDays: 30
+
+  GeofenceDispatcher:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-geofence-dispatcher
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-geofenceDispatcher-lambda
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.geofence.dispatcher.GeofenceDispatcher
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/geofence-dispatcher-lambda/telematics.geofenceDispatcher-latest.jar'
+      Environment:
+        Variables:
+          QUEUE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-internal-alert-queue
+          TABLE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics.geofence
+          awsRegion: us-east-1
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds:
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for trackunit
+  #-----------------------------------------------------------------------------   
+
+  TelematicsTrackunitProcessor:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - Trackunit-processor
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - Trackunit-processor
+    
+      Handler: HERC.Telematics.TrackUnit.Processor::HERC.Telematics.TrackUnit.Processor.TrackUnitProcessor::FunctionHandler
+      Runtime: dotnetcore3.1
+      TracingConfig:
+        Mode: Active
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/Trackunit/TrackUnitProcessor/TrackUnitLambda-Latest.zip'
+      Description: .NET function
+      MemorySize: 512
+      Timeout: 900
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+  
+  LambdaTrigger:
+    Type: 'AWS::Lambda::EventSourceMapping'
+    DependsOn: 
+      - TelematicsTrackunitProcessor
+    Properties:
+      BatchSize: 100
+      MaximumRecordAgeInSeconds: -1
+      MaximumRetryAttempts: 3
+      StartingPosition: LATEST
+      EventSourceArn: "arn:aws:kinesis:us-east-1:110972972731:stream/prod-telematics-raw-data-stream"
+      FunctionName:
+        Fn::GetAtt:
+          - "TelematicsTrackunitProcessor"
+          - "Arn"
+
+  EventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+        FunctionName: !Ref TelematicsTrackunitProcessor
+        Qualifier: $LATEST
+        MaximumEventAgeInSeconds: 600
+        MaximumRetryAttempts: 0
+        DestinationConfig:
+          OnFailure:
+              Destination: "arn:aws:sqs:us-east-1:110972972731:prod-TUProcessor-errormessage-queue"
+  
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for Geofence Dispatcher Log Grop
+  #-----------------------------------------------------------------------------
+  
+  GeofenceDispatcherGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: GeofenceDispatcher
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${GeofenceDispatcher}"
+      RetentionInDays: 30
+
+  #-----------------------------------------------------------------------------
+  # This Function for Events Rule Creating
+  #-----------------------------------------------------------------------------
+  
+  GeofenceDispatcherEventBridgeRule:
+    Type: AWS::Events::Rule
+    DependsOn: GeofenceDispatcher
+    Properties:
+      Description: catch-all rule for event bus
+      Name:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-geofencealerts
+      EventPattern:
+        source:
+          - aws.geo
+        detail-type:
+          - Location Geofence Event
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt GeofenceDispatcher.Arn
+          Id: lambda-function
+
+  #-----------------------------------------------------------------------------
+  # This Function for EventBridgeInvokeFunctionPermission integration
+  #-----------------------------------------------------------------------------
+  
+  EventBridgeInvokeFunctionPermissionDispatcher:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref "GeofenceDispatcher"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GeofenceDispatcherEventBridgeRule.Arn
+  
+  #-----------------------------------------------------------------------------
+  # This Function for creating SQS Queue
+  #-----------------------------------------------------------------------------
+  
+  AlertMessageQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-internal-alert-queue
+      
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "SQS"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-internal-alert-queue
+  
+  #-----------------------------------------------------------------------------
+  # This Function for creating SQS Queue Policy
+  #-----------------------------------------------------------------------------
+  
+  mysqspolicy1:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Id: MyQueuePolicy
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AlertMessageQueue
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - "SQS:*"
+          Resource: !Ref AlertMessageQueue
+      Queues:
+      - !Ref AlertMessageQueue
+
+  macviewcustomequipmentsdetails:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-macviewcustomequipmentsdetails
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-macviewcustomequipmentsdetails
+      TracingConfig:
+        Mode: Active
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/mac-equipment-details/mac-equipment-details-latest.jar'
+      Handler: herc.telematics.macequipment.FetchEquipmentDetails::handleRequest
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          cachePort: 6379
+          cacheconnectionUrl: "prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com"
+          awsRegion: us-east-1
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7" 
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 30
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for macviewcustomequipmentsdetails Log Grop
+  #-----------------------------------------------------------------------------
+  
+  macviewcustomequipmentsdetailslog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: macviewcustomequipmentsdetails
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${macviewcustomequipmentsdetails}"
+      RetentionInDays: 30
+
+  GraphQLApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      AuthenticationType: API_KEY
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-macequipmentdetails
+      Tags: 
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Environment"
+          Value: 
+            Ref: Environment
+        - Key: "ResourceType"
+          Value: "AppSync"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-macequipmentdetails
+
+  AppSyncApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Description: "mac equipment details" 
+     
+      
+  LambdaAsDatasource:      
+    Type: "AWS::AppSync::DataSource"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Name: MacViewCustomEquipment1
+      Description: "triggering the MAC view custom Equipment lambda"
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt macviewcustomequipmentsdetails.Arn
+      ServiceRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Appysync_DynamodbInvoke
+      
+  QueryGetPostResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: "Query"
+      FieldName: "getMacEquipments"
+      DataSourceName: !GetAtt LambdaAsDatasource.Name
+      RequestMappingTemplate: |
+               { 
+               
+                  "version" : "2017-02-28", 
+                  "operation": "Invoke", 
+                  "payload": $util.toJson($context.args)
+               } 
+      ResponseMappingTemplate: |
+                 $utils.toJson($context.result)
+
+  Schema:
+    Type: "AWS::AppSync::GraphQLSchema"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Definition: |
+        schema {
+            query: Query
+        }
+
+        type Equipment {
+            customEquipmentName: String
+            equipmentName: String
+            icNumber: String
+        }
+
+        type EquipmentsData {
+            equipmentDetails: [Equipment]
+            errorMessage: String
+        }
+
+        type Query {
+            getMacEquipments(customerNumber: String!, ic: [String]!): EquipmentsData
+        }
+
+  modifycustomequipmentname:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-modify-customequipmentname
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-modify-customequipmentname
+      TracingConfig:
+        Mode: Active
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/modify-custom-equipmentname/telematics-modifycustomequipmentname-latest.jar'
+      Handler: herc.telematics.equipmentcustomname.handler.UpdateEquipmentCustomNameHandler
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          cachePort: 6379
+          cacheconnectionUrl: "prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com"
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7" 
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 30
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+    
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for modifycustomequipmentname Log Grop
+  #-----------------------------------------------------------------------------
+  
+  modifycustomequipmentnamelog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: modifycustomequipmentname
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${modifycustomequipmentname}"
+      RetentionInDays: 30
+      
+  GraphQLApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      AuthenticationType: API_KEY
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-custom-equipment-name
+      Tags: 
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Environment"
+          Value: 
+            Ref: Environment
+        - Key: "ResourceType"
+          Value: "AppSync"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-custom-equipment-name
+        
+
+  AppSyncApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Description: "save custom equipment name" 
+      Expires: 1672481021
+      
+  LambdaAsDatasource:      
+    Type: "AWS::AppSync::DataSource"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Type: AWS_LAMBDA
+      Name: telematics_modify_customequipmentname
+      Description: "triggering the Save Custom equipment name"
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt modifycustomequipmentname.Arn 
+      ServiceRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Appysync_DynamodbInvoke
+      
+  QueryGetPostResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: "Mutation"
+      FieldName: "updateCustomEquipmentName"
+      DataSourceName: !GetAtt LambdaAsDatasource.Name
+      RequestMappingTemplate: |
+               { 
+               
+                  "version" : "2017-02-28", 
+                  "operation": "Invoke", 
+                  "payload": $util.toJson($context.args)
+               } 
+      ResponseMappingTemplate: |
+                  #if( $context.result && $context.result.errorMessage )
+                    $utils.error($context.result.errorMessage, $context.result.errorType)
+                  #else
+                    $utils.toJson($context.result)
+                  #end        
+              
+
+  Schema:
+    Type: "AWS::AppSync::GraphQLSchema"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Definition: |
+        schema {
+            query: Query
+            mutation: Mutation
+        }
+
+        type EquipmentCustomName {
+            contractNumber: String
+            customEquipmentName: String
+            customerNumber: String
+            errorMessage: String
+            errorType: String
+            icNumber: String
+        }
+
+        type Mutation {
+            saveCustomEquipmentName(equipmentCustomNameRequestList: [EquipmentCustomNames]): [EquipmentCustomName]
+            updateCustomEquipmentName(customEquipmentName: String!, customerNumber: String!, icNumber: String!): EquipmentCustomName
+        }
+
+        type Query {
+            getEquipmentSummary(id: Int!): EquipmentCustomName
+        }  
+
+        input EquipmentCustomNames {
+            contractNumber: String
+            customEquipmentName: String!
+            customerNumber: String!
+            icNumber: String!
+        }  
+
+  geofencecirclepolygon:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-circle-2-polygon
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-circle-2-polygon
+      TracingConfig:
+        Mode: Active
+      Handler: qa-telematics-circle-2-polygon.lambda_handler
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/geofence.circle-lambda/qa-telematics-circle-2-polygon_v1.zip'
+      Runtime: python3.9
+      Description: "geofence circle lambda function"
+      MemorySize: 512
+      Timeout: 30
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for geofencecirclepolygon Log Grop
+  #-----------------------------------------------------------------------------
+  
+  geofencecirclepolygonlog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: geofencecirclepolygon
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${geofencecirclepolygon}"
+      RetentionInDays: 30
+
+  rentalmandetails:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-rentalmandetails
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-rentalmandetails
+     
+      Handler: herc.telematics.rentalman.handler.RentalmanHandler
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName 
+        S3Key: 'lambda_function/telematics.rentalman-lambda/telematics.rentalman.lambda-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7"
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 30
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for rentalmandetails Log Grop
+  #-----------------------------------------------------------------------------
+  
+  rentalmandetailslog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: rentalmandetails
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${rentalmandetails}"
+      RetentionInDays: 30
+
+  maceligibleequipments:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-maceligibleequipments
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-maceligibleequipments
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.macequipment.FetchMacEligibleEquipmentDetails
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/maceligibleequipmentdetails/mac-eligible-equipment-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7"
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 900
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+    
+  GraphQLApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      AuthenticationType: API_KEY
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-maceligibleequipmentsdetails
+      Tags: 
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Environment"
+          Value: 
+            Ref: Environment
+        - Key: "ResourceType"
+          Value: "AppSync"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-maceligibleequipments
+
+  AppSyncApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Description: "mac elgibile equipment" 
+     
+  LambdaAsDatasource:      
+    Type: "AWS::AppSync::DataSource"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Name: MacEligibleEquipments1
+      Description: "triggering the MAC eligibility equipment"   
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt maceligibleequipments.Arn
+      ServiceRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Appysync_DynamodbInvoke
+      
+  QueryGetPostResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: "Query"
+      FieldName: "getMacEligibleEquipments"
+      DataSourceName: !GetAtt LambdaAsDatasource.Name
+      RequestMappingTemplate: |
+               { 
+               
+                  "version" : "2017-02-28", 
+                  "operation": "Invoke", 
+                  "payload": $util.toJson($context.args)
+               } 
+      ResponseMappingTemplate: |
+                  #if( $context.result && $context.result.errorMessage )
+                    $utils.error($context.result.errorMessage, $context.result.errorType)
+                  #else
+                    $utils.toJson($context.result)
+                  #end        
+              
+
+  Schema:
+    Type: "AWS::AppSync::GraphQLSchema"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Definition: |
+        schema {
+            query: Query
+        }
+
+        type EligibleEquipmentsData {
+            eligibleEquipmentDetails: [Equipment]
+        }
+
+        type Equipment {
+            assetId: String
+            equipmentIcNumber: String
+            serial: String
+        }
+
+        type Query {
+            getMacEligibleEquipments(assignedDate: String): EligibleEquipmentsData
+        }
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for maceligibleequipments Log Grop
+  #-----------------------------------------------------------------------------
+  
+  maceligibleequipmentslog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: maceligibleequipments
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${maceligibleequipments}"
+      RetentionInDays: 30
+
+  customequipmentname:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-custom-equipment-name
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-custom-equipment-name
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.customname.handler.EquipmentHandler::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/save-custom-name/herc.telematics.customname-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          cachePort: 6379
+          cacheconnectionUrl: "prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com"
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7" 
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 30
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds:
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for customequipmentname Log Grop
+  #-----------------------------------------------------------------------------
+  
+  customequipmentnamelog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: customequipmentname
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${customequipmentname}"
+      RetentionInDays: 30
+      
+  GraphQLApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      AuthenticationType: API_KEY
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-custom-equipment-name
+      Tags: 
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Environment"
+          Value: 
+            Ref: Environment
+        - Key: "ResourceType"
+          Value: "AppSync"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-custom-equipment-name
+
+  AppSyncApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Description: "save custom equipment name" 
+      Expires: 1672481021
+      
+  LambdaAsDatasource:      
+    Type: "AWS::AppSync::DataSource"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Type: AWS_LAMBDA
+      Name: EquipmentCustomName1
+      Description: "triggering the Save Custom equipment name"
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt customequipmentname.Arn 
+      ServiceRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Appysync_DynamodbInvoke
+      
+  QueryGetPostResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: "Mutation"
+      FieldName: "saveCustomEquipmentName"
+      DataSourceName: !GetAtt LambdaAsDatasource.Name
+      RequestMappingTemplate: |
+               { 
+               
+                  "version" : "2017-02-28", 
+                  "operation": "Invoke", 
+                  "payload": $util.toJson($context.args)
+               } 
+      ResponseMappingTemplate: |
+                  #if( $context.result && $context.result.errorMessage )
+                    $utils.error($context.result.errorMessage, $context.result.errorType)
+                  #else
+                    $utils.toJson($context.result)
+                  #end        
+  
+  Schema:
+    Type: "AWS::AppSync::GraphQLSchema"
+    Properties:
+      ApiId: !GetAtt [GraphQLApi, ApiId]
+      Definition: |
+        schema {
+            query: Query
+            mutation: Mutation
+        }
+
+        type EquipmentCustomName {
+            contractNumber: String
+            customEquipmentName: String
+            customerNumber: String
+            errorMessage: String
+            errorType: String
+            icNumber: String
+        }
+
+        type Mutation {
+            saveCustomEquipmentName(equipmentCustomNameRequestList: [EquipmentCustomNames]): [EquipmentCustomName]
+            updateCustomEquipmentName(customEquipmentName: String!, customerNumber: String!, icNumber: String!): EquipmentCustomName
+        }
+
+        type Query {
+            getEquipmentSummary(id: Int!): EquipmentCustomName
+        }  
+
+        input EquipmentCustomNames {
+            contractNumber: String
+            customEquipmentName: String!
+            customerNumber: String!
+            icNumber: String!
+        } 
+
+  GeofenceActivaterprimary:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-geofenceActivator-primary
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-geofenceActivator-primary
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.geofence.activator.GeofenceActivator::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/geofenceActivator-lambda/telematics.geofenceActivator-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          SECRET_NAME: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          CACHE_CONNECTION_URL: prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com
+          CACHE_PORT: 6379
+          CIRCLE_TO_POLYGON_LAMBDA_FN: !GetAtt geofencecirclepolygon.Arn
+          LOCATION_SERVICE_AWS_REGION: us-east-1
+          REGION_AWS: us-east-1
+          GEOFENCE_TABLE_NAME: prod-telematics.geofence
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+      
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for Geofence Activater Log Grop
+  #-----------------------------------------------------------------------------
+  
+  GeofenceActivaterGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: GeofenceActivaterprimary
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${GeofenceActivaterprimary}"
+      RetentionInDays: 30
+  
+  #-----------------------------------------------------------------------------
+  # This Function for Integrating Lambda with MSK Cluster
+  #-----------------------------------------------------------------------------
+  
+  Locationupdateeventtarget:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: 'arn:aws:kafka:us-east-1:110972972731:cluster/prod-elevaterewrite-kakfa/4d9a8a79-4a13-400e-b5e0-a3bf0b6edc14-24'
+      FunctionName: !Ref GeofenceActivaterprimary
+      BatchSize: 50
+      StartingPosition : LATEST
+      Topics:
+        -
+          'Fn::Join':
+            - ''
+            - - Ref: Environment
+              - .telematics-device-location-update-event
+  
+  #-----------------------------------------------------------------------------
+  # This Function for Integrating Lambda with MSK Cluster
+  #-----------------------------------------------------------------------------
+  
+  Equipmentassignmentupdateevent:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: 'arn:aws:kafka:us-east-1:110972972731:cluster/prod-elevaterewrite-kakfa/4d9a8a79-4a13-400e-b5e0-a3bf0b6edc14-24'
+      FunctionName: !Ref GeofenceActivaterprimary
+      BatchSize: 10
+      StartingPosition : LATEST
+      Topics:
+        -
+          'Fn::Join':
+            - ''
+            - - Ref: Environment
+              - .telematics-equipment-assignment-update-event
+  
+  #-----------------------------------------------------------------------------
+  # This Function for Integrating Lambda with MSK Cluster
+  #-----------------------------------------------------------------------------
+  
+  Geofenceupdateeventtarget:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: 'arn:aws:kafka:us-east-1:110972972731:cluster/prod-elevaterewrite-kakfa/4d9a8a79-4a13-400e-b5e0-a3bf0b6edc14-24'
+      FunctionName: !Ref GeofenceActivaterprimary
+      BatchSize: 20
+      StartingPosition : LATEST
+      Topics:
+        -
+          'Fn::Join':
+            - ''
+            - - Ref: Environment
+              - .telematics-geofence-update-event
+       
+  #-----------------------------------------------------------------------------
+  # Template file of geofence activater secondary creation of all services including Lambda
+  #-----------------------------------------------------------------------------
+  
+  GeofenceActivatersecondary:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-geofenceActivator-secondary
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-geofenceActivator-secondary
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.geofence.activator.GeofenceActivator::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/geofenceActivator-lambda/telematics.geofenceActivator-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          SECRET_NAME: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          REGION_AWS: us-east-1
+          CACHE_CONNECTION_URL: prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com
+          CACHE_PORT: 6379
+          CIRCLE_TO_POLYGON_LAMBDA_FN: arn:aws:lambda:us-east-1:110972972731:function:prod-telematics-circle-2-polygon
+          GEOFENCE_TABLE_NAME: prod-telematics.geofence
+          LOCATION_SERVICE_AWS_REGION: us-east-1
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+      #Role: !GetAtt GeofenceActivaterRole.Arn
+      #Role: !Sub arn:aws:iam::${AWS::AccountId}:role/telematics-geofenceactivatortest-Lambda
+
+   #-----------------------------------------------------------------------------
+   # This Lambda Function for Geofence Activater Log Grop
+   #-----------------------------------------------------------------------------
+  
+  GeofenceActivaterGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: GeofenceActivatersecondary
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${GeofenceActivatersecondary}"
+      RetentionInDays: 30
+
+   #-----------------------------------------------------------------------------
+   # This Function for Integrating Lambda with MSK Cluster
+   #-----------------------------------------------------------------------------
+  
+  Telematicsgeofenceupdateeventprod:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: 'arn:aws:kafka:us-east-1:110972972731:cluster/prod-elevaterewrite-kakfa/4d9a8a79-4a13-400e-b5e0-a3bf0b6edc14-24'
+      FunctionName: !Ref GeofenceActivatersecondary
+      BatchSize: 10
+      StartingPosition : LATEST
+      Topics:
+        -
+          'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - .telematics-geofence-update-event
+
+  #-----------------------------------------------------------------------------
+  # This lambda for Thresholdtocache
+  #-----------------------------------------------------------------------------
+
+  Thresholdtocache:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - Threshold_to_cache
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - Threshold_to_cache
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.alert.threshold.handlers.LoadAlertThresholdData::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/alertpreference-to-cache-lambda/lambdta-load-threshold-cache-latest.jar'
+      Environment:
+        Variables:
+          QUEUE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - DynamoStream_to_cache
+          ALERT_TABLE_NAME: prod-AlertPreference
+          CACHE_CONNECTION_URL: prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com
+          CACHE_PORT: 6379
+          dbconnectionUrlsecret: telematics/prodrdsaccess
+          awsRegion: us-east-1
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+  
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for Thresholdtocache Log Grop
+  #-----------------------------------------------------------------------------
+  
+  DynamoStreamtocacheLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Thresholdtocache}"
+      RetentionInDays: 30
+
+  #-----------------------------------------------------------------------------
+  # This lambda for creation of all services including Lambda
+  #-----------------------------------------------------------------------------
+
+  DynamoStreamtocache:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - DynamoStream_to_cache
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - DynamoStream_to_cache
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.alert.threshold.handlers.ProcessDynamodbRecords::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/dynamostream-to-cache-lambda/telematics.dynamostream-latest.jar'
+      Environment:
+        Variables:
+          QUEUE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - DynamoStream_to_cache
+          
+          ALERT_TABLE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - AlertPreference
+          CACHE_CONNECTION_URL: prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com
+          CACHE_PORT: 6379
+          dbconnectionUrlsecret: telematics/prodrdsaccess
+          awsRegion: us-east-1
+          
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+  
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for Dynamo Stream to cache Log Grop
+  #-----------------------------------------------------------------------------
+  
+  DynamoStreamtocacheLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${DynamoStreamtocache}"
+      RetentionInDays: 30
+
+  #-----------------------------------------------------------------------------
+  # This function for DynamoDB Creating with AutoScaling based on 70%
+  #-----------------------------------------------------------------------------
+  
+  DynamoDBTable1:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - AlertPreference
+      BillingMode: PROVISIONED
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - AttributeName: PreferenceID
+          AttributeType: S
+        - AttributeName: AccountNumber
+          AttributeType: S
+        - AttributeName: DivisionCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PreferenceID
+          KeyType: HASH
+
+      ProvisionedThroughput:
+          ReadCapacityUnits: !Ref "ReadCapacityUnits"
+          WriteCapacityUnits: !Ref "WriteCapacityUnits"
+      GlobalSecondaryIndexes:
+      - IndexName: AccountNumber-DivisionCode-Index
+        KeySchema:
+        - AttributeName: AccountNumber
+          KeyType: HASH
+        - AttributeName: DivisionCode
+          KeyType: RANGE
+        Projection:
+          ProjectionType: "ALL"
+        ProvisionedThroughput: 
+          ReadCapacityUnits: !Ref "ReadCapacityUnits"
+          WriteCapacityUnits: !Ref "WriteCapacityUnits"
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - AlertPreference
+
+  WriteCapacityScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId: !Join
+        - /
+        - - table
+          - !Ref DynamoDBTable1
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+  WriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  ReadCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId: !Join
+        - /
+        - - table
+          - !Ref DynamoDBTable1
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:table:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable1
+  
+  ReadScalingPolicy: 
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties: 
+      PolicyName: ReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: 
+        Ref: ReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration: 
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+  
+  #-----------------------------------------------------------------------------
+  # This Function for Integrating Lambda with DynamoDB
+  #-----------------------------------------------------------------------------
+  
+  EventSourceMappingDynamoStreamtocache:
+    Type: AWS::Lambda::EventSourceMapping
+    DependsOn: DynamoDBTable1
+    Properties:
+      BatchSize: 1
+      StartingPosition : LATEST
+      EventSourceArn: !GetAtt DynamoDBTable1.StreamArn
+      FunctionName:
+        Fn::GetAtt:
+          - "DynamoStreamtocache"
+          - "Arn"
+  #-----------------------------------------------------------------------------
+  # This lambda for creation of all services including Lambda
+  #-----------------------------------------------------------------------------
+
+  geofenceAutoAddBackGround:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - geofence_AutoAdd_BackGround
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - geofence_AutoAdd_BackGround
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.geofence.autoaddsync.handler.LambdaHandler::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/GeofenceAutoAddSync-lambda/GeofenceAutoAddSync-latest.jar'
+      Environment:
+        Variables:
+          QUEUE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-internal-alert-queue
+          awsRegion: us-east-1
+          ALERT_TABLE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - AlertPreference
+          CACHE_CONNECTION_URL: prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com
+          CACHE_PORT: 63
+          GEOFENCE_TABLE_NAME:
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics.geofence
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+  
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for Geofence Auto Add Log Grop
+  #-----------------------------------------------------------------------------
+  
+  geofenceAutoAddBackGroundLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: geofenceAutoAddBackGround
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${geofenceAutoAddBackGround}"
+      RetentionInDays: 30
+
+  #-----------------------------------------------------------------------------
+  # This Function for Events Rule Creating
+  #-----------------------------------------------------------------------------
+  
+  geofenceAutoAddBackGroundEventBridgeRule:
+    Type: AWS::Events::Rule
+    DependsOn: geofenceAutoAddBackGround
+    Properties:
+      Description: Every Night @ 11pm EST
+      Name:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - 11pmNightly
+      ScheduleExpression: cron(1 5 * * ? *)
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt geofenceAutoAddBackGround.Arn
+          Id: lambda-function
+
+  #-----------------------------------------------------------------------------
+  # This Function for EventBridgeInvokeFunctionPermission integration
+  #-----------------------------------------------------------------------------
+  
+  EventBridgeInvokeFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref "geofenceAutoAddBackGround"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt geofenceAutoAddBackGroundEventBridgeRule.Arn
+
+  Telematicsequipmentnotusedalerts:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: "Equipment not used alert Lambda Function"
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-equipment-notused-alerts
+      Handler: herc.telematics.alerts.handler.EquipmentNotUsedAlertHandler::handleRequest
+      MemorySize: 512
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+      Runtime: java11
+      Timeout: 60
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          TABLE_NAME: prod.alert.preference
+          LOCATION_INDEX_NAME:  prod.telematics.backend.index
+          ALERT_DISPATCHER_URL: "http://internal-a34e29b5270d242dbb465b38de9f6119-1594544306.us-east-1.elb.amazonaws.com/alert-api/dispatchalert"
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/equipment-notused-alerts/equipment-notused-alerts-latest.jar'
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "LambdaFunction"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-equipment-notused-alerts   
+  
+  EquipmentnotusedalertEventBridgeRule:
+    Type: AWS::Events::Rule
+    DependsOn: Telematicsequipmentnotusedalerts
+    Properties:
+      Description: Used for Scheduled events for lambda
+      Name:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-equipment-notused-alert
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt Telematicsequipmentnotusedalerts.Arn
+          Id: lambda-function
+      ScheduleExpression: rate(1 day)
+  
+  EventBridgeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+        FunctionName: !Ref Telematicsequipmentnotusedalerts
+        Action: lambda:InvokeFunction
+        Principal: events.amazonaws.com
+        SourceArn: !GetAtt EquipmentnotusedalertEventBridgeRule.Arn
+
+  OtgIngestionfunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: "OTG Ingestion Lambda Function"
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-otgingestion
+      Handler: herc.telematics.otg.handler.OtgHandler
+      MemorySize: 512
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+      Runtime: java11
+      Timeout: 60
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Environment:
+        Variables:
+          DYNAMODBTABLENAME: 
+              'Fn::Join':
+                - '-'
+                - - Ref: Environment
+                  - elevate.telematics.OTG
+          awsRegion: us-east-1
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/otg-ingestion-lambda/telematics-otg-latest.jar'
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "LambdaFunction"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-otgingestion 
+  
+  EventSourceMappingotgingest:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: 'arn:aws:kafka:us-east-1:110972972731:cluster/prod-elevaterewrite-kakfa/4d9a8a79-4a13-400e-b5e0-a3bf0b6edc14-24'
+      FunctionName: !Ref OtgIngestionfunction
+      StartingPosition : LATEST
+      Topics:
+        -
+          'Fn::Join':
+            - ''
+            - - Ref: Environment
+              - .otg-ingest
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for OtgIngestionfunction Log Grop
+  #-----------------------------------------------------------------------------
+  
+  OtgIngestionfunctionlog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: OtgIngestionfunction
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${OtgIngestionfunction}"
+      RetentionInDays: 30
+  
+  telematicmaccrud:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-mac-crud-operations
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-mac-crud-operations
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.macequipment.MacIneligibleEquipmentDetails::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/mac.crud.operations-lambda/mac-crud-operations-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7" 
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 30
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for telematicmaccrud Log Grop
+  #-----------------------------------------------------------------------------
+  
+  telematicmaccrudlog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: telematicmaccrud
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${telematicmaccrud}"
+      RetentionInDays: 30
+
+  telematicssaveequipmentname:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-save-equipment-name
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Lambda"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-save-equipment-name
+      TracingConfig:
+        Mode: Active
+      Handler: herc.telematics.saveequipname.handler.EquipmentNameHandler::handleRequest
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/save-equipment-name-lambda/herc.telematics.saveequipname-latest.jar'
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          cachePort: 6379
+          cacheconnectionUrl: "prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com"
+          oktaAudience: "https://publish-p41903-e158255.adobeaemcloud.com"
+          oktaIssuer: "https://hercrentalscustomers.oktapreview.com/oauth2/aus1ler37vW5RxEUi1d7" 
+          securityEnabledFlag: false
+      Runtime: java11
+      Description: Java function
+      MemorySize: 512
+      Timeout: 900
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for OTG Alerts Lambda
+  #-----------------------------------------------------------------------------
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: "OTG Alerts Lambda Function"
+      FunctionName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-otg-alerts
+      Handler: herc.telematics.otg.handler.OtgHandler
+      #KmsKeyArn: "aws/rds"
+      MemorySize: 512
+      #Role: !GetAtt LambdaRole.Arn
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-LambdaAccessRole
+      Runtime: java11
+      Timeout: 60
+      VpcConfig:
+        SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref LambdaSG
+      Environment:
+        Variables:
+          Environment: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+          secretName: !FindInMap [ !Ref "Environment", Layer, secretsmanager ]
+          awsRegion: us-east-1
+          ALERT_DISPATCHER_URL: "https://prodtelealertapi.hercrentals.com/alert-api/dispatchalert"
+      Code:
+        S3Bucket: 
+          Ref: S3BucketName
+        S3Key: 'lambda_function/otg-alerts-lambda/telematics-otgalert-latest.jar'
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "LambdaFunction"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-otgingestion
+  
+  EventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: "arn:aws:kafka:us-east-1:110972972731:cluster/prod-elevaterewrite-kakfa/4d9a8a79-4a13-400e-b5e0-a3bf0b6edc14-24"
+      FunctionName: !Ref LambdaFunction
+      StartingPosition : LATEST
+      Topics:
+        - prod.otg-ingest
+        
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for OTG alertlambdafuntion Log Grop
+  #-----------------------------------------------------------------------------
+  
+  OTGalertLambdaFunctionlog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: LambdaFunction
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 30 
+  #-----------------------------------------------------------------------------
+  # This Lambda Function for telematicssaveequipmentname Log Grop
+  #-----------------------------------------------------------------------------
+  
+  telematicssaveequipmentnamelog:
+    Type: AWS::Logs::LogGroup
+    DependsOn: telematicssaveequipmentname
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${telematicssaveequipmentname}"
+      RetentionInDays: 30
+
+  #-----------------------------------------------------------------------------
+  # This Function for creating telematics-alertmessagequeue
+  #-----------------------------------------------------------------------------
+  
+  AlertMessageQueueone:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-alertmessagequeue
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "SQS"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-alertmessagequeue
+  
+  #-----------------------------------------------------------------------------
+  # This Function for creating telematics-alertmessagequeue Policy
+  #-----------------------------------------------------------------------------
+  
+  mysqspolicyone:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Id: MyQueuePolicy
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AlertMessageQueueone
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - "SQS:*"
+          Resource: !Ref AlertMessageQueueone
+      Queues:
+      - !Ref AlertMessageQueueone
+  
+  #-----------------------------------------------------------------------------
+  # This Function for creating telematics-dlq-alertmessagequeue
+  #-----------------------------------------------------------------------------
+  
+  AlertMessageQueuetwo:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-dlq-alertmessagequeue
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "SQS"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-dlq-alertmessagequeue
+  
+  #-----------------------------------------------------------------------------
+  # This Function for creating telematics-alertmessagequeue Policy
+  #-----------------------------------------------------------------------------
+  
+  mysqspolicytwo:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Id: MyQueuePolicy
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AlertMessageQueuetwo
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - "SQS:*"
+          Resource: !Ref AlertMessageQueuetwo
+      Queues:
+      - !Ref AlertMessageQueuetwo

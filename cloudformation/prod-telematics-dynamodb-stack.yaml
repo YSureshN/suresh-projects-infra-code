@@ -1,0 +1,772 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This AWS CloudFormation Template is for integration of Lambda function,
+  dynamodb and rds database for OTG API .
+Parameters:
+  Environment:
+    Description: 'Environment: dev,qa,stg,prod' 
+    Type: String
+    Default: 'prod'
+    AllowedValues:
+      - dev
+      - qa
+      - stg
+      - prod
+    ConstraintDescription: must be either 'dev','qa','stg' or 'prod'
+
+  CPU:
+    Description: 'CPU unit for container'
+    Type: Number
+    Default: 512
+    AllowedValues:
+      - 256
+      - 512
+      - 1024
+      - 2048
+      - 4096
+    
+  Memory:
+    Description: 'Memory(MiB) unit for container'
+    Type: Number
+    Default: 512
+    AllowedValues:
+      - 512
+      - 1024
+      - 2048
+      - 3072
+      - 4096
+
+  HashKeyElementName:
+    Type: String
+    Default: id
+    Description: Hash Key Name
+  HashKeyElementType:
+    Type: String
+    Default: S
+    Description: Hash Key Type
+  RangeKeyElementName:
+    Type: String
+    Default: timestamp
+    Description: Range Key Name
+  RangeKeyElementType:
+    Type: String
+    Default: S
+    Description: Reange Key Type
+  HashKeyElementNameGeofence:
+    Type: String
+    Default: geofenceId
+    Description: Hash Key Name
+  HashKeyElementNametelematics:
+    Type: String
+    Default: DeviceIdentifier
+    Description: Hash Key Name
+  RangeKeyElementNametelematics:
+    Type: String
+    Default: ReportDate
+    Description: Range Key Name
+  RangeKeyElementTypetelematics:
+    Type: String
+    Default: S
+    Description: Reange Key Type
+
+  
+Resources:
+
+  # --------------------------------------------------
+  # OtgAPI Dynamo DB
+  # --------------------------------------------------
+
+  DynamoDBTable1:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - elevate.telematics.OTG
+        
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName:
+            Ref: HashKeyElementName
+          AttributeType:
+            Ref: HashKeyElementType
+        - AttributeName:
+            Ref: RangeKeyElementName
+          AttributeType:
+            Ref: RangeKeyElementType
+      KeySchema:
+        - AttributeName:
+            Ref: HashKeyElementName
+          KeyType: HASH
+        - AttributeName:
+            Ref: RangeKeyElementName
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - elevate.telematics.OTG
+
+  UserTableWriteCapacityScalableTarget1:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable1}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable1
+
+  UserTableWriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy1
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget1
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget1:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable1}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable1
+
+  UserTableReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy1
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget1
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+# --------------------------------------------------
+# AlertPreferenceApi Dynamo DB
+# --------------------------------------------------
+  DynamoDBTable2:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - telematics.alertPreference
+        
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName:
+            Ref: HashKeyElementName
+          AttributeType:
+            Ref: HashKeyElementType
+        
+      KeySchema:
+        - AttributeName:
+            Ref: HashKeyElementName
+          KeyType: HASH
+        
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - telematics.alertPreference
+
+  UserTableWriteCapacityScalableTarget2:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        
+        Fn::Sub: table/${DynamoDBTable2}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable2
+
+  UserTableWriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy2
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget2
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget2:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable2}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable2
+
+  UserTableReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy2
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget2
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+  # --------------------------------------------------
+  # Geofence Dynamo DB
+  # --------------------------------------------------
+  DynamoDBTable3:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - telematics.geofence
+        
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName:
+            Ref: HashKeyElementNameGeofence
+          AttributeType:
+            Ref: HashKeyElementType
+        
+      KeySchema:
+        - AttributeName:
+            Ref: HashKeyElementNameGeofence
+          KeyType: HASH
+        
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - telematics.geofence
+
+  UserTableWriteCapacityScalableTarget3:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable3}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable3
+
+  UserTableWriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy3
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget3
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget3:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable3}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable3
+
+  UserTableReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy3
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget3
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+  # --------------------------------------------------
+  # Elevate telematics Dynamo DB
+  # --------------------------------------------------
+  DynamoDBTable4:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - telematics
+        
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName:
+            Ref: HashKeyElementNametelematics
+          AttributeType:
+            Ref: HashKeyElementType
+        - AttributeName:
+            Ref: RangeKeyElementNametelematics
+          AttributeType:
+            Ref: RangeKeyElementTypetelematics
+      KeySchema:
+        - AttributeName:
+            Ref: HashKeyElementNametelematics
+          KeyType: HASH
+        - AttributeName:
+            Ref: RangeKeyElementNametelematics
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - telematics
+
+  UserTableWriteCapacityScalableTarget4:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable4}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable4
+
+  UserTableWriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy4
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget4
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget4:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${DynamoDBTable4}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: DynamoDBTable4
+
+  UserTableReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy4
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget4
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+   # --------------------------------------------------
+  # telematics.equipmentlocations Dynamo DB
+  # --------------------------------------------------
+
+  TelematicsequipmentlocationsDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - telematics.equipmentlocations
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName: EquipmentIdentifier
+          AttributeType: S
+      KeySchema:
+        - AttributeName: EquipmentIdentifier
+          KeyType: HASH
+
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - telematics.equipmentlocations
+
+  UserTableWriteCapacityScalableTarget5:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${TelematicsequipmentlocationsDynamoDBTable}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: TelematicsequipmentlocationsDynamoDBTable
+
+  UserTableWriteScalingPolicy5:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy5
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget5
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget5:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${TelematicsequipmentlocationsDynamoDBTable}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: TelematicsequipmentlocationsDynamoDBTable
+
+  UserTableReadScalingPolicy5:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy5
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget5
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+# --------------------------------------------------
+# telematics.geofence.alertPreference Dynamo DB
+# --------------------------------------------------
+  TelematicsgeofencealertPreferenceDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - telematics.geofence.alertPreference
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName: geofenceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: geofenceId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - telematics.geofence.alertPreference
+
+  UserTableWriteCapacityScalableTarget6:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${TelematicsgeofencealertPreferenceDynamoDBTable}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: TelematicsgeofencealertPreferenceDynamoDBTable
+
+  UserTableWriteScalingPolicy6:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy6
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget6
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget6:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${TelematicsgeofencealertPreferenceDynamoDBTable}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: TelematicsgeofencealertPreferenceDynamoDBTable
+
+  UserTableReadScalingPolicy6:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy6
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget6
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+  # --------------------------------------------------
+  # telematics.alert Dynamo DB
+  # --------------------------------------------------
+  
+  TelematicsalertDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Join:
+          - '-'
+          - - Ref: Environment
+            - telematics.alert
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName: customerDivision
+          AttributeType: S
+        - AttributeName: triggeredTime
+          AttributeType: "N"
+      KeySchema:
+        - AttributeName: customerDivision
+          KeyType: HASH
+        - AttributeName: triggeredTime
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Environment
+          Value:
+            Ref: Environment
+        - Key: ResourceType
+          Value: DynamoDB Table
+        - Key: CostCenter
+          Value: '9038'
+        - Key: Application
+          Value: Elevate-Telematics
+        - Key: ITOwner
+          Value: Sunil Gupta
+        - Key: Name
+          Value:
+            Fn::Join:
+              - '-'
+              - - Ref: Environment
+                - telematics.alert
+
+  UserTableWriteCapacityScalableTarget7:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${TelematicsalertDynamoDBTable}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: TelematicsalertDynamoDBTable
+
+  UserTableWriteScalingPolicy7:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: WriteAutoScalingPolicy7
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableWriteCapacityScalableTarget7
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  UserTableReadCapacityScalableTarget7:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId:
+        Fn::Sub: table/${TelematicsalertDynamoDBTable}
+      RoleARN:
+        Fn::Sub: arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+    DependsOn: TelematicsalertDynamoDBTable
+
+  UserTableReadScalingPolicy7:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ReadAutoScalingPolicy7
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: UserTableReadCapacityScalableTarget7
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization

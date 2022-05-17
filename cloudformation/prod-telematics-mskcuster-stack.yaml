@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: The AWS CloudFormation template for MSK Cluster
+Parameters:
+  Environment:
+    Description: 'Environment: dev,qa,stg,prod' 
+    Type: String
+    Default: 'prod'
+    AllowedValues:
+      - dev
+      - qa
+      - stg
+      - prod
+    ConstraintDescription: must be either 'dev','qa','stg' or 'prod'
+
+  CPU:
+    Description: 'CPU unit for container'
+    Type: Number
+    Default: 512
+    AllowedValues:
+      - 256
+      - 512
+      - 1024
+      - 2048
+      - 4096
+    
+  Memory:
+    Description: 'Memory(MiB) unit for container'
+    Type: Number
+    Default: 512
+    AllowedValues:
+      - 512
+      - 1024
+      - 2048
+      - 3072
+      - 4096
+
+Mappings:
+  dev:
+    Layer:
+      "VpcId": "vpc-1081ac74"
+      "SubnetId1": "subnet-dd038785"
+      "SubnetId2": "subnet-bc28a093"
+      "SecurityGroupID": "sg-9bad17e3"
+      "PubSubnetId1": "subnet-a04ee1f8"
+      "PubSubnetId2": "subnet-191faa33"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "7"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:dev}}"
+            
+  qa:
+    Layer:
+      "VpcId": "vpc-9ad5dafe"
+      "SubnetId1": "subnet-86e163de"
+      "SubnetId2": "subnet-b0813a9a"
+      "SecurityGroupID": "sg-9ecb8fe6"
+      "PubSubnetId1": "subnet-a6e062fe"
+      "PubSubnetId2": "subnet-2482390e"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "7"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:qa}}"
+
+  stg:
+    Layer:
+      "VpcId": "vpc-a29785c6"
+      "SubnetId1": "subnet-f54d3383"
+      "SubnetId2": "subnet-073b377bfb81584f4"
+      "PubSubnetId1": "subnet-024f3174"
+      "PubSubnetId2": "subnet-85f0bcb8"
+      "RetentionInDays": "14"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:stg}}"
+
+  prod:
+    Layer:
+      "VpcId": "vpc-e8ece28c"
+      "SubnetId1": "subnet-939d27b9"
+      "SubnetId2": "subnet-ca7e0bbc"
+      "SecurityGroupID": "sg-9bad17e3"
+      "PubSubnetId1": "subnet-cb7e0bbd"
+      "PubSubnetId2": "subnet-0ece4356"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "30"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:prod}}"
+
+  #--------------------------------------------
+  #   CloudFormation for MSK CLuster Log Group
+  #--------------------------------------------
+Resources: 
+  MSKSG:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Load Balancer SG
+      VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '9094'
+        ToPort: '9094'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '2181'
+        ToPort: '2181'
+        CidrIp: 10.0.0.0/8
+      SecurityGroupEgress:
+      - IpProtocol: "All"
+        CidrIp: 0.0.0.0/0
+      GroupName:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - msk-cluster-sg
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Security Group"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+                - '-'
+                - - Ref: Environment
+                  - msk-security-group
+  MSKClusterLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: 
+             'Fn::Join':
+               - '-'
+               - - Ref: Environment
+                 - Kakfa
+      RetentionInDays: 30
+        
+  #-----------------------------------------------------------------------------
+  #   CloudFormation for MSK Cluster -  Creating MSK Cluster
+  #-----------------------------------------------------------------------------
+
+  TelematicsMSKCluster:
+    Type: 'AWS::MSK::Cluster'
+    Properties:
+      BrokerNodeGroupInfo:
+        ClientSubnets: 
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        InstanceType: kafka.m5.large
+        SecurityGroups:
+          - Ref: MSKSG
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: 300
+      ClusterName:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - elevaterewrite-kakfa
+      EncryptionInfo:
+        EncryptionInTransit:
+          ClientBroker: TLS
+          InCluster: true
+      EnhancedMonitoring: PER_TOPIC_PER_BROKER
+      KafkaVersion: 2.6.2
+      NumberOfBrokerNodes: 6
+      LoggingInfo:
+        BrokerLogs:
+          CloudWatchLogs:
+            Enabled: true
+            LogGroup: 
+             'Fn::Join':
+               - '-'
+               - - Ref: Environment
+                 - Kakfa
+      Tags:
+        Environment: !Ref Environment
+        ResourceType: MSK-Cluster
+        CostCenter: 9038
+        Application: Elevate-Telematics
+        ITOwner: Sunil Gupta
+        Name:
+          'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - MSK-telemetics

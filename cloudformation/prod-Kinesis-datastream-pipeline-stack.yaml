@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: 'This solution allows you to create a AWS Codepipline for deploying a serverless application with AWS CodeBuild triggered by a Codecommit repo commit. The setup of this solution is fully automated via a CloudFormation template.'
+
+Parameters:
+  Environment:
+    AllowedValues:
+    - dev
+    - qa
+    - stg
+    - prod
+    Description: 'Environment'
+    Type: 'String'
+    Default: 'prod'
+
+  DeployLinuxImage:
+    Type: String
+    Default: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+    Description: Deploying Linux Machine image to use for the deployment
+
+#-----------------------------------------------------------------------------
+# Mappings
+#-----------------------------------------------------------------------------
+
+Mappings:
+  dev:
+    Layer:
+      "VpcId": "vpc-1081ac74"
+      "SubnetId1": "subnet-bc28a093"
+      "SubnetId2": "subnet-dd038785"
+      "SecurityGroup": "sg-9bad17e3"
+      "AWSClusterName": "dev-elevatetelematics-ms"
+      
+  qa:
+    Layer:
+      "VpcId": "vpc-9ad5dafe"
+      "SubnetId1": "subnet-b0813a9a"
+      "SubnetId2": "subnet-86e163de"
+      "SecurityGroup": "sg-9ecb8fe6"
+      "AWSClusterName": "qa-elevatetelematics-ms"
+      
+  stg:
+    Layer:
+      "VpcId": "vpc-a29785c6"
+      "SubnetId1": "subnet-f54d3383"
+      "SubnetId2": "subnet-fdf1bdc0"
+      "SecurityGroup": "sg-5e74f82a"
+      "AWSClusterName": "stg-elevatetelematics-ms"
+      
+  prod:
+    Layer:
+      "VpcId": "vpc-e8ece28c"
+      "SubnetId1": "subnet-939d27b9"
+      "SubnetId2": "subnet-ca7e0bbc"
+      "SecurityGroup": "sg-96aa31ee"
+      "AWSClusterName": "prd-elevatetelematics-ms"
+
+Resources:
+  #-----------------------------------------------------------------------------
+  # AWS CodeBuild Project SG
+  #-----------------------------------------------------------------------------
+  
+  # CodeBuildSG:
+  #   Type: "AWS::EC2::SecurityGroup"
+  #   Properties:
+  #     GroupDescription: Microservice Build SG
+  #     VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+  #     SecurityGroupIngress:
+  #     - IpProtocol: tcp
+  #       FromPort: '80'
+  #       ToPort: '80'
+  #       CidrIp: 10.0.0.0/8
+  #     - IpProtocol: tcp
+  #       FromPort: '443'
+  #       ToPort: '443'
+  #       CidrIp: 10.0.0.0/8
+  #     - IpProtocol: tcp
+  #       FromPort: '9094'
+  #       ToPort: '9094'
+  #       CidrIp: 10.0.0.0/8
+  #     - IpProtocol: tcp
+  #       FromPort: '2181'
+  #       ToPort: '2181'
+  #       CidrIp: 10.0.0.0/8
+  #     SecurityGroupEgress:
+  #     - IpProtocol: "All"
+  #       CidrIp: 0.0.0.0/0
+  #     GroupName:
+  #       'Fn::Join':
+  #           - '-'
+  #           - - Ref: Environment
+  #             - kinesis-app-build-security-group
+  #     Tags: 
+  #       - Key: "Environment"
+  #         Value: 
+  #           Ref: Environment         
+  #       - Key: "ResourceType"
+  #         Value: "Security Group"
+  #       - Key: "CostCenter"
+  #         Value: "9038"
+  #       - Key: "Application"
+  #         Value: "Elevate-Telematics"
+  #       - Key: "ITOwner"
+  #         Value: "Sunil Gupta"
+  #       - Key: "Name"
+  #         Value: 
+  #           'Fn::Join':
+  #               - '-'
+  #               - - Ref: Environment
+  #                 - kinesis-app-build-security-group
+
+  #----------------------------------------------------------
+  # AWS CodePipeline for all Kinesis application in prod environment
+  #----------------------------------------------------------
+  
+  KinesisApplicationPipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-kinesis-da-pipeline
+      Tags: 
+        - Key: "Environment"
+          Value: 
+              Ref: Environment         
+        - Key: "ResourceType"
+          Value: "AWS CodePipeline"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-kinesis-da-pipeline
+      ArtifactStore:
+        Location: 
+          'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - .telematics.inartifacts
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodepipelineIAMRole
+      Stages:
+      
+        # Stage 1:  Get the source from Codecommit:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: 1
+              Configuration:
+                RepositoryName: telematics.all.kinesis-da.deployment
+                BranchName: prod
+              OutputArtifacts:
+                - Name: TheSourceCode
+
+      
+        # Stage 2:  Build to prod Deploy Manual Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              InputArtifacts: []
+              Name: ProdApproval
+              RunOrder: 1
+          Name: Prod-Deployment_Approval
+
+        # Stage 3:  Deploy the image into Prod Environment
+        - Name: ProdDeploy
+          Actions:
+            - Name: ProdDeploy
+              RunOrder: 1
+              InputArtifacts:
+                - Name: TheSourceCode
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              Configuration:
+                ProjectName:  !Ref KineseisAppDeployBuild
+              OutputArtifacts:
+                - Name: TheArtifact1
+
+  KineseisAppDeployBuild:
+    Type: "AWS::CodeBuild::Project"
+    Properties: 
+      Name: KineseisAppDeployBuild
+      Artifacts:
+        Type: CODEPIPELINE
+        EncryptionDisabled: true
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::Region"]]
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::AccountId"] ]
+        Image: !Ref DeployLinuxImage
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodebuildIAMRole
+      TimeoutInMinutes: 10
+      VpcConfig:
+        VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+        Subnets:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !FindInMap [ !Ref "Environment", Layer, SecurityGroup ]     
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml

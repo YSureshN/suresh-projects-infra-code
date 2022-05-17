@@ -1,0 +1,746 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: 'This solution allows you to create a AWS Codepipline for deploying a serverless application with AWS CodeBuild triggered by a Codecommit repo commit. The setup of this solution is fully automated via a CloudFormation template.'
+
+Parameters:
+  Environment:
+    AllowedValues:
+    - dev
+    - qa
+    - stg
+    - prod
+    Description: 'Environment'
+    Type: 'String'
+    Default: 'prod'
+
+  DeployLinuxImage:
+    Type: String
+    Default: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+    Description: Deploying Linux Machine image to use for the deployment
+
+#-----------------------------------------------------------------------------
+# Mappings
+#-----------------------------------------------------------------------------
+
+Mappings:
+  dev:
+    Layer:
+      "VpcId": "vpc-1081ac74"
+      "SubnetId1": "subnet-bc28a093"
+      "SubnetId2": "subnet-dd038785"
+      "SecurityGroup": "sg-9bad17e3"
+      "AWSClusterName": "dev-elevatetelematics-ms"
+      
+  qa:
+    Layer:
+      "VpcId": "vpc-9ad5dafe"
+      "SubnetId1": "subnet-b0813a9a"
+      "SubnetId2": "subnet-86e163de"
+      "SecurityGroup": "sg-9ecb8fe6"
+      "AWSClusterName": "qa-elevatetelematics-ms"
+      
+  stg:
+    Layer:
+      "VpcId": "vpc-a29785c6"
+      "SubnetId1": "subnet-f54d3383"
+      "SubnetId2": "subnet-073b377bfb81584f4"
+      "SecurityGroupID": "sg-9bad17e3"
+      "AWSClusterName": "stg-elevatetelematics-ms"
+      
+  prod:
+    Layer:
+      "VpcId": "vpc-e8ece28c"
+      "SubnetId1": "subnet-ca7e0bbc"
+      "SubnetId2": "subnet-939d27b9"
+      "SecurityGroup": "sg-96aa31ee"
+      "AWSClusterName": "prd-elevatetelematics-ms"
+
+Resources:
+  #-----------------------------------------------------------------------------
+  # AWS CodeBuild Project for Build
+  #-----------------------------------------------------------------------------
+  
+  MicroBuildSG:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Microservice Build SG
+      VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '9094'
+        ToPort: '9094'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '2181'
+        ToPort: '2181'
+        CidrIp: 10.0.0.0/8
+      SecurityGroupEgress:
+      - IpProtocol: "All"
+        CidrIp: 0.0.0.0/0
+      GroupName:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - microservice-build-security-group
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Security Group"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+                - '-'
+                - - Ref: Environment
+                  - microservice-build-security-group
+
+  MicroDeployBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: TelemeticsprodmicrodeployBuild
+      Artifacts:
+        Type: CODEPIPELINE
+        EncryptionDisabled: true
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: IMAGE_TAG
+            Type: PLAINTEXT
+            Value: latest
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::Region"]]
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::AccountId"] ]
+        Image: !Ref DeployLinuxImage
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodebuildIAMRole
+      TimeoutInMinutes: 10
+      VpcConfig:
+        VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+        Subnets:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds:
+          - !Ref MicroBuildSG
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: prod-buildspec.yml
+
+
+  #----------------------------------------------------------
+  # AWS CodePipeline for all microservices in prod environment
+  #----------------------------------------------------------
+  
+  AllMicroservicesPipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics.microservices.api-deployment
+      Tags: 
+        - Key: "Environment"
+          Value: 
+              Ref: Environment         
+        - Key: "ResourceType"
+          Value: "AWS CodePipeline"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics.microservices.api-deployment
+      ArtifactStore:
+        Location: 
+          'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - .telematics.inartifacts
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodepipelineIAMRole
+      Stages:
+      
+        # Stage 1:  Get the source from Codecommit:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: 1
+              Configuration:
+                RepositoryName: Telematics.config 
+                BranchName: prod.telematics.config
+              OutputArtifacts:
+                - Name: TheSourceCode
+
+      
+        # Stage 2:  Build to prod Deploy Manual Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              InputArtifacts: []
+              Name: ProdApproval
+              RunOrder: 1
+          Name: Prod-Deployment_Approval
+
+        # Stage 3:  Deploy the image into prod Environment
+        - Name: ProdDeploy
+          Actions:
+            - Name: ProdDeploy
+              RunOrder: 1
+              InputArtifacts:
+                - Name: TheSourceCode
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              Configuration:
+                ProjectName:  !Ref MicroDeployBuild
+              OutputArtifacts:
+                - Name: TheArtifact1
+
+  ConfigDeployBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: TelemeticsprodconfigdeployBuild
+      Artifacts:
+        Type: CODEPIPELINE
+        EncryptionDisabled: true
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: IMAGE_TAG
+            Type: PLAINTEXT
+            Value: latest
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::Region"]]
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::AccountId"] ]
+        Image: !Ref DeployLinuxImage
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodebuildIAMRole
+      TimeoutInMinutes: 10
+      VpcConfig:
+        VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+        Subnets:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref MicroBuildSG       
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: prod-Configmap.yml
+
+
+  #----------------------------------------------------------
+  # AWS CodePipeline for all config in prod environment
+  #----------------------------------------------------------
+  
+  AllConfigPipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics.config-pipeline
+      Tags: 
+        - Key: "Environment"
+          Value: 
+              Ref: Environment         
+        - Key: "ResourceType"
+          Value: "AWS CodePipeline"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - telematics.config-pipeline
+      ArtifactStore:
+        Location: 
+          'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - .telematics.inartifacts
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodepipelineIAMRole
+      Stages:
+      
+        # Stage 1:  Get the source from Codecommit:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: 1
+              Configuration:
+                RepositoryName: Telematics.config
+                BranchName: prod.telematics.config
+              OutputArtifacts:
+                - Name: TheSourceCode
+
+      
+        # Stage 2:  Build to prod Deploy Manual Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              InputArtifacts: []
+              Name: ProdApproval
+              RunOrder: 1
+          Name: Prod-Deployment_Approval
+
+        # Stage 3:  Deploy the image into prod Environment
+        - Name: ProdDeploy
+          Actions:
+            - Name: ProdDeploy
+              RunOrder: 1
+              InputArtifacts:
+                - Name: TheSourceCode
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              Configuration:
+                ProjectName:  !Ref ConfigDeployBuild
+              OutputArtifacts:
+                - Name: TheArtifact1
+
+  AllLambdaDeployBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: TelemeticsprodlambdadeployBuild
+      Artifacts:
+        Type: CODEPIPELINE
+        EncryptionDisabled: true
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: IMAGE_TAG
+            Type: PLAINTEXT
+            Value: latest
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::Region"]]
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::AccountId"] ]
+          - Name: FUNCTION_NAME1
+            Type: PLAINTEXT
+            Value: prod-telematics-rentalmandetails
+          - Name: FUNCTION_NAME2
+            Type: PLAINTEXT
+            Value: prod-telematics-batchupdate-equipmentcustomname
+          - Name: FUNCTION_NAME3
+            Type: PLAINTEXT
+            Value: prod-telematics-macviewcustomequipmentsdetails
+          - Name: FUNCTION_NAME4
+            Type: PLAINTEXT
+            Value: prod-telematics-modify-customequipmentname
+          - Name: FUNCTION_NAME5
+            Type: PLAINTEXT
+            Value: prod-telematics-circle-2-polygon
+          - Name: FUNCTION_NAME6
+            Type: PLAINTEXT
+            Value: prod-telematics-maceligibleequipments
+          - Name: FUNCTION_NAME7
+            Type: PLAINTEXT
+            Value: prod-telematics-custom-equipment-name
+          - Name: FUNCTION_NAME8
+            Type: PLAINTEXT
+            Value: prod-telematics-save-equipment-name
+          - Name: FUNCTION_NAME9
+            Type: PLAINTEXT
+            Value: prod-telematics-otgingestion
+          - Name: FUNCTION_NAME10
+            Type: PLAINTEXT
+            Value: prod-telematics-geofenceActivator-primary
+          - Name: FUNCTION_NAME10a
+            Type: PLAINTEXT
+            Value: prod-telematics-geofenceActivator-secondary
+          - Name: FUNCTION_NAME11
+            Type: PLAINTEXT
+            Value: prod-telematics-geofence-dispatcher
+          - Name: FUNCTION_NAME12
+            Type: PLAINTEXT
+            Value: prod-telematics-mac-crud-operations
+          - Name: FUNCTION_NAME13
+            Type: PLAINTEXT
+            Value: prod-telematics-equipment-notused-alerts
+          - Name: FUNCTION_NAME14
+            Type: PLAINTEXT
+            Value: prod-geofence_AutoAdd_BackGround
+          - Name: FUNCTION_NAME15
+            Type: PLAINTEXT
+            Value: prod-DynamoStream_to_cache
+          - Name: FUNCTION_NAME16
+            Type: PLAINTEXT
+            Value: prod-Threshold_to_cache
+          - Name: FUNCTION_NAME17
+            Type: PLAINTEXT
+            Value: prod-Trackunit-processor
+          - Name: FUNCTION_NAME18
+            Type: PLAINTEXT
+            Value: prod-telematics-otg-alerts
+          - Name: FUNCTION_NAME19
+            Type: PLAINTEXT
+            Value: prod-telematics-geofenceActivator-secondary
+          - Name: S3_BUCKET
+            Type: PLAINTEXT
+            Value: dev.telematics.inartifacts
+        Image: !Ref DeployLinuxImage
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodebuildIAMRole
+      TimeoutInMinutes: 10
+      VpcConfig:
+        VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+        Subnets:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref MicroBuildSG     
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: lambda_buildspec.yml
+
+  #----------------------------------------------------------
+  # AWS CodePipeline for all lambda in prod environment
+  #----------------------------------------------------------
+  
+  AllLambdaPipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics.lambda-deployment
+      Tags: 
+        - Key: "Environment"
+          Value: 
+              Ref: Environment         
+        - Key: "ResourceType"
+          Value: "AWS CodePipeline"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics.lambda-deployment
+      ArtifactStore:
+        Location: 
+          'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - .telematics.inartifacts
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodepipelineIAMRole
+      Stages:
+      
+        # Stage 1:  Get the source from Codecommit:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: 1
+              Configuration:
+                RepositoryName: telematics.all.Lambda.deployment
+                BranchName: prod
+              OutputArtifacts:
+                - Name: TheSourceCode
+
+      
+        # Stage 2:  Build to prod Deploy Manual Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              InputArtifacts: []
+              Name: ProdApproval
+              RunOrder: 1
+          Name: Prod-Deployment_Approval
+
+        # Stage 3:  Deploy the image into prod Environment
+        - Name: ProdDeploy
+          Actions:
+            - Name: ProdDeploy
+              RunOrder: 1
+              InputArtifacts:
+                - Name: TheSourceCode
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              Configuration:
+                ProjectName:  !Ref AllLambdaDeployBuild
+              OutputArtifacts:
+                - Name: TheArtifact1
+
+  AllLambdaInfraDeploy:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics.lambda-infra-deploy
+      Tags: 
+        - Key: "Environment"
+          Value: 
+              Ref: Environment         
+        - Key: "ResourceType"
+          Value: "AWS CodePipeline"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - telematics.lambda-infra-deploy
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodepipelineIAMRole
+      ArtifactStore:
+        Location: 
+          'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - .telematics.inartifacts
+        Type: S3
+              
+      Stages:
+          - 
+            Name: Source
+            Actions:
+              -
+                Name: SourceAction
+                ActionTypeId:
+                  Category: Source 
+                  Owner: AWS 
+                  Version: 1 
+                  Provider: CodeCommit
+                OutputArtifacts: 
+                  -
+                    Name: SourceArtifact 
+                Configuration:
+                  BranchName: prod
+                  RepositoryName: telematics.all.Lambda.deployment
+                  PollForSourceChanges: false
+                  OutputArtifactFormat: CODE_ZIP
+                Namespace: SourceVariables
+                RunOrder: 1
+          
+          - 
+            Name: Approval
+            Actions:
+              -
+                Name: Approval
+                RunOrder: 2
+                ActionTypeId:
+                  Category: Approval 
+                  Owner: AWS 
+                  Version: 1 
+                  Provider: Manual
+                Configuration:
+                  CustomData: "Requesting approval"
+
+          - 
+            Name: ProdDeploy
+            Actions:
+              -
+                Name: ProdDeploy
+                Region: us-east-1
+                RunOrder: 3
+                ActionTypeId:
+                  Category: Deploy 
+                  Owner: AWS 
+                  Version: 1 
+                  Provider: CloudFormation
+                InputArtifacts: 
+                  -
+                    #Name: BuildArtifact
+                    Name: SourceArtifact
+                Namespace: DeployVariables
+                Configuration:
+                  ActionMode: CREATE_UPDATE
+                  StackName: 
+                    'Fn::Join':
+                      - '-'
+                      - - Ref: Environment
+                        - telematics-lambdastack-geofencedispatcher
+                  Capabilities: CAPABILITY_AUTO_EXPAND,CAPABILITY_NAMED_IAM
+                  RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodebuildIAMRole
+                  TemplatePath: SourceArtifact::template.yml
+#----------------------------------------------------------
+  # AWS CodePipeline for all Legacy lambda in prod environment
+  #----------------------------------------------------------
+  
+  LegacyLambdaPipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics.legacy.lambda-deployment
+      Tags: 
+        - Key: "Environment"
+          Value: 
+              Ref: Environment         
+        - Key: "ResourceType"
+          Value: "AWS CodePipeline"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics.legacy.lambda-deployment
+      ArtifactStore:
+        Location: 
+          'Fn::Join':
+              - ''
+              - - Ref: Environment
+                - .telematics.inartifacts
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodepipelineIAMRole
+      Stages:
+      
+        # Stage 1:  Get the source from Codecommit:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: 1
+              Configuration:
+                RepositoryName: TelematicsLegacy-Lambdas
+                BranchName: prod
+              OutputArtifacts:
+                - Name: TheSourceCode
+
+      
+        # Stage 2:  Build to prod Deploy Manual Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              InputArtifacts: []
+              Name: ProdApproval
+              RunOrder: 1
+          Name: Prod-Deployment_Approval
+
+        # Stage 3:  Deploy the image into prod Environment
+        - Name: ProdDeploy
+          Actions:
+            - Name: ProdDeploy
+              RunOrder: 1
+              InputArtifacts:
+                - Name: TheSourceCode
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              Configuration:
+                ProjectName:  !Ref LegacyLambdaDeployBuild
+              OutputArtifacts:
+                - Name: TheArtifact1
+  LegacyLambdaDeployBuild:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Name: TelemeticsprodlegacylambdadeployBuild
+      Artifacts:
+        Type: CODEPIPELINE
+        EncryptionDisabled: true
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: IMAGE_TAG
+            Type: PLAINTEXT
+            Value: latest
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::Region"]]
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Join [ "", [!Ref "AWS::AccountId"] ]
+        Image: !Ref DeployLinuxImage
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-CodebuildIAMRole
+      TimeoutInMinutes: 10
+      VpcConfig:
+        VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+        Subnets:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+        SecurityGroupIds: 
+          - !Ref MicroBuildSG     
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml

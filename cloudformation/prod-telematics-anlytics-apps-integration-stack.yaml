@@ -1,0 +1,1114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'This AWS CloudFormation Template is for TrackUnit Integration'
+
+Parameters:
+  Environment:
+    Description: 'Environment: dev,qa,stg,prod' 
+    Type: String
+    Default: 'prod'
+    AllowedValues:
+      - dev
+      - qa
+      - stg
+      - prod
+    ConstraintDescription: must be either 'dev','qa','stg' or 'prod'
+  
+Mappings:
+  dev:
+    Layer:
+      "VpcId": "vpc-1081ac74"
+      "SubnetId1": "subnet-dd038785"
+      "SubnetId2": "subnet-bc28a093"
+      "SecurityGroupID": "sg-9bad17e3"
+      "SecurityGroupRedis": "sg-073ab3ced1d5b7889"
+      "PubSubnetId1": "subnet-a04ee1f8"
+      "PubSubnetId2": "subnet-191faa33"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "7"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:dev}}"
+            
+  qa:
+    Layer:
+      "VpcId": "vpc-9ad5dafe"
+      "SubnetId1": "subnet-86e163de"
+      "SubnetId2": "subnet-b0813a9a"
+      "SecurityGroupID": "sg-9ecb8fe6"
+      "SecurityGroupRedis": "sg-0daa32a78dda76f36"
+      "PubSubnetId1": "subnet-a6e062fe"
+      "PubSubnetId2": "subnet-2482390e"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "7"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:qa}}"
+
+  stg:
+    Layer:
+      "VpcId": "vpc-a29785c6"
+      "SubnetId1": "subnet-f54d3383"
+      "SubnetId2": "subnet-073b377bfb81584f4"
+      "SecurityGroupID": "sg-9bad17e3"
+      "PubSubnetId1": "subnet-024f3174"
+      "PubSubnetId2": "subnet-85f0bcb8"
+      "RawDataS3Bucket": "stg.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "stg.telematics.outartifacts"
+      "RetentionInDays": "14"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:stg}}"
+
+  prod:
+    Layer:
+      "VpcId": "vpc-e8ece28c"
+      "SubnetId1": "subnet-939d27b9"
+      "SubnetId2": "subnet-ca7e0bbc"
+      "SecurityGroupID": "sg-9bad17e3"
+      "PubSubnetId1": "subnet-cb7e0bbd"
+      "PubSubnetId2": "subnet-0ece4356"
+      "RawDataS3Bucket": "dev.telematics.inartifacts"
+      "ProcessedDataS3Bucket": "dev.telematics.outartifacts"
+      "RetentionInDays": "30"
+      "ConnectionString": "{{resolve:secretsmanager:telematics/elevate:SecretString:prod}}"
+
+Resources:
+
+  RedisSG:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Redis SG
+      VpcId: !FindInMap [ !Ref "Environment", Layer, VpcId ]
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '9094'
+        ToPort: '9094'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '2181'
+        ToPort: '2181'
+        CidrIp: 10.0.0.0/8
+      - IpProtocol: tcp
+        FromPort: '6379'
+        ToPort: '6379'
+        CidrIp: 10.0.0.0/8
+      SecurityGroupEgress:
+      - IpProtocol: "All"
+        CidrIp: 0.0.0.0/0
+      GroupName:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - reids-sg
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Security Group"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - redis-security-group
+
+  KinesisRawDataStream:
+    Type: 'AWS::Kinesis::Stream'
+    Properties:
+      Name:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-raw-data-stream                    
+      RetentionPeriodHours: 24
+      ShardCount: 10
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Kinesis Data Stream"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-raw-data-stream   
+
+  KinesisProcessedDataStream:
+    Type: 'AWS::Kinesis::Stream'
+    Properties:
+      Name:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-processed-data-stream
+      RetentionPeriodHours: 24
+      ShardCount: 10
+      Tags: 
+        - Key: "Environments"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Kinesis Data Stream"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-processed-data-stream
+
+  #--------------------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-telematics-processed-data-delivery-stream
+  #--------------------------------------------------------------------------#
+
+
+  # ProcessedDataDeliveryStreamLoggingConfig:
+  #   Type: AWS::KinesisFirehose::DeliveryStreamCloudWatchLoggingOption
+  #   DependsOn: 
+  #     - ProcessedDataDeliveryStreamLogStream
+  #     - ProcessedDataDeliveryStreamLogGroup
+  #   Properties:
+  #     DeliveryStreamName: !Ref KinesisProcessedDataDeliveryStream
+  #     CloudWatchLoggingOption:
+  #       LogStreamARN: 
+  #         'Fn::Join': 
+  #           - ':' 
+  #           - - 'arn:aws:logs' 
+  #             - !Ref 'AWS::Region' 
+  #             - !Ref 'AWS::AccountId' 
+  #             - log-group 
+  #             - !Ref ProcessedDataDeliveryStreamLogGroup 
+  #             - log-stream 
+  #             - !Ref ProcessedDataDeliveryStreamLogStream
+
+  ProcessedDataDeliveryStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-processed-data-delivery-stream
+      RetentionInDays: 30
+  
+  ProcessedDataDeliveryStreamLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: ProcessedDataDeliveryStreamLogGroup
+    Properties: 
+      LogGroupName: !Ref ProcessedDataDeliveryStreamLogGroup
+
+  KinesisProcessedDataDeliveryStream:
+    Type: 'AWS::KinesisFirehose::DeliveryStream'
+    Properties:
+      DeliveryStreamName: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-processed-data-delivery-stream
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          'Fn::GetAtt':
+            - KinesisProcessedDataStream
+            - Arn
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+      S3DestinationConfiguration:
+        BucketARN:
+          Fn::Join:
+          - ''
+          - - 'arn:aws:s3:::'
+            - Ref: Environment
+            - '.telematics.outartifacts'
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+        Prefix: 
+          'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - 'telematics-processed-data-storage'
+        BufferingHints:
+          SizeInMBs: 5
+          IntervalInSeconds: 60 
+        CloudWatchLoggingOptions: 
+          Enabled: true
+          LogGroupName: !Sub "/aws/kinesisfirehose/${ProcessedDataDeliveryStreamLogGroup}" 
+          LogStreamName: "DestinationDelivery"
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "Kinesis Delivery Stream"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematics-processed-data-stream
+    DependsOn: KinesisRawDataStream
+
+
+  #--------------------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-telematics-raw-data-delivery-stream
+  #--------------------------------------------------------------------------#
+
+  RawDataDeliveryStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-raw-data-delivery-stream
+      RetentionInDays: 30
+  
+  RawDataDeliveryStreamLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: RawDataDeliveryStreamLogGroup
+    Properties: 
+      LogGroupName: !Ref RawDataDeliveryStreamLogGroup
+
+  KinesisRawDataDeliveryStream:
+    Type: 'AWS::KinesisFirehose::DeliveryStream'
+    Properties:
+      DeliveryStreamName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-raw-data-delivery-stream
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          'Fn::GetAtt':
+            - KinesisRawDataStream
+            - Arn
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+      S3DestinationConfiguration:
+          BucketARN:
+             Fn::Join:
+             - ''
+             - - 'arn:aws:s3:::'
+               - Ref: Environment
+               - '.telematics.inartifacts'
+          RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+          Prefix: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - 'telematics-raw-data-storage'
+          BufferingHints:
+            SizeInMBs: 5
+            IntervalInSeconds: 60 
+          CloudWatchLoggingOptions: 
+            Enabled: true
+            LogGroupName: !Sub "/aws/kinesisfirehose/${RawDataDeliveryStreamLogGroup}" 
+            LogStreamName: "DestinationDelivery"
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "SQS"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+                - '-'
+                - - Ref: Environment
+                  - telematics-raw-data-stream
+    DependsOn: KinesisRawDataStream
+
+  SubnetGroup:
+    Type: 'AWS::ElastiCache::SubnetGroup'
+    Properties:
+      Description: "Cache Subnet Group"
+      SubnetIds:
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId1 ]
+          - !FindInMap [ !Ref "Environment", Layer, SubnetId2 ]
+
+  ElastiCache:
+    Type: "AWS::ElastiCache::CacheCluster"
+    Properties:
+      NumCacheNodes: 1
+      Port: 6379
+      ClusterName:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-elasticache
+      CacheNodeType: "cache.r6g.large"
+      CacheParameterGroupName: "default.redis6.x"
+      CacheSubnetGroupName: !Ref SubnetGroup
+      Engine: "redis"
+      EngineVersion: "6.2"
+      VpcSecurityGroupIds: 
+        - Ref: RedisSG
+
+  TrackunitSQS:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName:
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - elevate-trackunit-queue   
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment         
+        - Key: "ResourceType"
+          Value: "SQS"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "Application"
+          Value: "Elevate-Telematics"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+                - '-'
+                - - Ref: Environment
+                  - telematics-raw-data-stream
+      VisibilityTimeout: 30
+
+
+  #--------------------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-telematics-kinesis-timestream
+  #--------------------------------------------------------------------------#
+
+  KinesisTimestreamAppLoggingConfig:
+    Type: AWS::KinesisAnalyticsV2::ApplicationCloudWatchLoggingOption
+    DependsOn: 
+      - KinesisTimestreamLogStream
+      - KineisisTimestreamLogGroup
+    Properties:
+      ApplicationName: !Ref KinesisAnalyticsStreamingApplication
+      CloudWatchLoggingOption:
+        LogStreamARN: 
+          'Fn::Join': 
+            - ':' 
+            - - 'arn:aws:logs' 
+              - !Ref 'AWS::Region' 
+              - !Ref 'AWS::AccountId' 
+              - log-group 
+              - !Ref KineisisTimestreamLogGroup 
+              - log-stream 
+              - !Ref KinesisTimestreamLogStream
+
+  KinesisTimestreamLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: KineisisTimestreamLogGroup
+    Properties: 
+      LogGroupName: !Ref KineisisTimestreamLogGroup
+      LogStreamName: 
+        'Fn::Join':
+          - '-'
+          - - kinesis
+            - analytics-log-stream
+
+  KineisisTimestreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kinesis-analytics/${KinesisAnalyticsStreamingApplication}"
+      RetentionInDays: 30
+
+
+  KinesisAnalyticsStreamingApplication:
+    Type: AWS::KinesisAnalyticsV2::Application
+    Properties:
+      RuntimeEnvironment: FLINK-1_11
+      ServiceExecutionRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataAnalyticsRole
+      ApplicationConfiguration:
+        ApplicationCodeConfiguration:
+          CodeContent:
+            S3ContentLocation:
+              BucketARN: "arn:aws:s3:::dev.elevateteledata"
+              FileKey: kinesis-to-timestream-test--36.0.jar  
+          CodeContentType: 'ZIPFILE'         
+        EnvironmentProperties:
+          PropertyGroups:
+            - PropertyGroupId: ConsumerConfigProperties
+              PropertyMap:
+                {
+                  aws.region: us-east-1,
+                  flink.stream.initpos: LATEST,
+                  input.stream.name: prod-telematics-processed-data-stream
+                }
+            - PropertyGroupId: DYNMO_DATABASE_DETAILS
+              PropertyMap:
+                {
+                  TABLE_NAME_DEVICE_LOCATION: dev-telematics.equipmentlocations
+                }
+            - PropertyGroupId: TIMESTREAM_DATABASE_DETAILS
+              PropertyMap:
+                {
+                  DATABASE_NAME: prod-telematics-timestream,
+                  DEVICEMESSAGE_TABLE_NAME: DeviceMessageData,
+                  REGION: us-east-1
+                }
+            # - PropertyGroupId: DB
+            #   PropertyMap:
+            #     {
+            #       connectionUrl: "jdbc:sqlserver://prodtelematicsdb.hercrentals.com;database=Telematics;",
+            #       password: xxxxxxx,
+            #       user: svc_Elevate_DB
+            #     }
+      ApplicationDescription: "Push data from kinesis to timestream"
+      ApplicationName:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-kinesis-timestream
+
+  #---------------------------------------------------------------------#
+  # Kinesis Streaming Application for prod-telematics-timestream-migrator
+  #---------------------------------------------------------------------#
+
+
+  MigratorRealtimeAlertsAppLoggingConfig:
+    Type: AWS::KinesisAnalyticsV2::ApplicationCloudWatchLoggingOption
+    DependsOn: 
+      - TimestreamMigratorLogStream
+      - TimestreamMigratorLogGroup
+    Properties:
+      ApplicationName: !Ref MigratorKinesisAnalyticsApplication
+      CloudWatchLoggingOption:
+        LogStreamARN: 
+          'Fn::Join': 
+            - ':' 
+            - - 'arn:aws:logs' 
+              - !Ref 'AWS::Region' 
+              - !Ref 'AWS::AccountId' 
+              - log-group 
+              - !Ref TimestreamMigratorLogGroup 
+              - log-stream 
+              - !Ref TimestreamMigratorLogStream
+
+  TimestreamMigratorLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: TimestreamMigratorLogGroup
+    Properties: 
+      LogGroupName: !Ref TimestreamMigratorLogGroup
+
+  TimestreamMigratorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kinesis-analytics/${MigratorKinesisAnalyticsApplication}"
+      RetentionInDays: 30
+      
+  MigratorKinesisAnalyticsApplication:
+    Type: AWS::KinesisAnalyticsV2::Application
+    Properties:
+      ApplicationName:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-timestream-migrator
+      RuntimeEnvironment: FLINK-1_13
+      ServiceExecutionRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataAnalyticsRole
+      ApplicationConfiguration:
+        ApplicationCodeConfiguration:
+          CodeContent:
+            S3ContentLocation:
+              BucketARN: "arn:aws:s3:::prod.elevate.artifacts"
+              FileKey: dpm2timestream-latest0424.jar
+          CodeContentType: 'ZIPFILE'
+        EnvironmentProperties:
+          PropertyGroups:
+            - PropertyGroupId: FlinkApplicationProperties
+              PropertyMap:
+                {
+                  Region: us-east-1,
+                  TimestreamDbName: prod-telematics-timestream,
+                  TimestreamTableName: DeviceMessageData,
+                  db.connectionUrl.secret: telematics/prodrdsaccess
+                  #db.connectionUrl: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+                }
+        FlinkApplicationConfiguration:
+          MonitoringConfiguration:
+            ConfigurationType: CUSTOM
+            LogLevel: INFO
+            MetricsLevel: TASK
+          ParallelismConfiguration:
+            AutoScalingEnabled: true
+            ConfigurationType: CUSTOM
+            Parallelism: 16
+            ParallelismPerKPU: 1
+        ApplicationSnapshotConfiguration:
+          SnapshotsEnabled: true
+
+  #---------------------------------------------------------------------#
+  # Kinesis Streaming Application for prod-telematics-realtime-alerts
+  #---------------------------------------------------------------------#
+  
+  RealtimeAlertsAppLoggingConfig:
+    Type: AWS::KinesisAnalyticsV2::ApplicationCloudWatchLoggingOption
+    DependsOn: 
+      - RealtimeAlertsLogStream
+      - RealtimeAlertsLogGroup
+    Properties:
+      ApplicationName: !Ref RealtimeKinesisAnalyticsApplication
+      CloudWatchLoggingOption:
+        LogStreamARN: 
+          'Fn::Join': 
+            - ':' 
+            - - 'arn:aws:logs' 
+              - !Ref 'AWS::Region' 
+              - !Ref 'AWS::AccountId' 
+              - log-group 
+              - !Ref RealtimeAlertsLogGroup
+              - log-stream 
+              - !Ref RealtimeAlertsLogStream
+
+  RealtimeAlertsLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: RealtimeAlertsLogGroup
+    Properties: 
+      LogGroupName: !Ref RealtimeAlertsLogGroup
+
+  RealtimeAlertsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kinesis-analytics/${RealtimeKinesisAnalyticsApplication}"
+      RetentionInDays: 30
+
+  RealtimeKinesisAnalyticsApplication:
+    Type: AWS::KinesisAnalyticsV2::Application
+    Properties:
+      ApplicationName:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-realtime-alerts
+      RuntimeEnvironment: FLINK-1_11
+      ServiceExecutionRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataAnalyticsRole
+      ApplicationConfiguration:
+        ApplicationCodeConfiguration:
+          CodeContent:
+            S3ContentLocation:
+              BucketARN: "arn:aws:s3:::dev.telematics.inartifacts"
+              FileKey: lambda_function/telematics.realtime.alerts/realtime-alerts-latest.jar
+          CodeContentType: 'ZIPFILE'
+        EnvironmentProperties:
+          PropertyGroups:
+            - PropertyGroupId: ConsumerConfigProperties
+              PropertyMap:
+                {
+                  aws.region: us-east-1,
+                  flink.stream.initpos: LATEST,
+                  input.stream.name: prod-telematics-processed-data-stream
+                }
+            - PropertyGroupId: DeviceLocationUpdates
+              PropertyMap:
+                {
+                  batch.size: 10,
+                  window.duration.mins: 1
+                }
+            - PropertyGroupId: KafkaProducerConfigProperties
+              PropertyMap:
+                {
+                  bootstrap.servers: "b-3.prod-elevaterewrite-kak.3yjb4e.c4.kafka.us-east-1.amazonaws.com:9094,b-1.prod-elevaterewrite-kak.3yjb4e.c4.kafka.us-east-1.amazonaws.com:9094,b-2.prod-elevaterewrite-kak.3yjb4e.c4.kafka.us-east-1.amazonaws.com:9094",
+                  kafka.topic.geofence.events: prod.telematics-device-location-update-event,
+                  security.protocol: SSL
+                }
+            - PropertyGroupId: DB
+              PropertyMap:
+                {
+                  connectionUrl.secret: telematics/prodrdsaccess,
+                  aws.region: us-east-1
+                }
+            - PropertyGroupId: Threshold
+              PropertyMap:
+                {
+                  LOW_DEF_THRESHOLD: "25.0",
+                  LOW_FUEL_THRESHOLD: "25.0",
+                  LOW_VOLTAGE_THRESHOLD: "10.9",
+                  REFUEL_THRESHOLD: "10.0"
+                }
+            - PropertyGroupId: AlertSQSQueue
+              PropertyMap:
+                {
+                  aws.region: us-east-1,
+                  queue.name: prod-telematics-internal-alert-queue
+                }
+            - PropertyGroupId: CACHE_PROPERTY_GROUP
+              PropertyMap:
+                {
+                  cache.connectionUrl: prod-telematics-elasticache.hoydlx.0001.use1.cache.amazonaws.com:6379,
+                  cache.port: 6379
+                }
+
+
+  #---------------------------------------------------------------------#
+  # Kinesis Streaming Application for prod-telematics-timestream-injector
+  #---------------------------------------------------------------------#
+
+  InjectorRealtimeAlertsAppLoggingConfig:
+    Type: AWS::KinesisAnalyticsV2::ApplicationCloudWatchLoggingOption
+    DependsOn: 
+      - TimestreamInjectorLogStream
+      - TimestreamInjectorLogGroup
+    Properties:
+      ApplicationName: !Ref InjectorKinesisAnalyticsApplication
+      CloudWatchLoggingOption:
+        LogStreamARN: 
+          'Fn::Join': 
+            - ':' 
+            - - 'arn:aws:logs' 
+              - !Ref 'AWS::Region' 
+              - !Ref 'AWS::AccountId' 
+              - log-group 
+              - !Ref TimestreamInjectorLogGroup 
+              - log-stream 
+              - !Ref TimestreamInjectorLogStream
+
+  TimestreamInjectorLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: TimestreamInjectorLogGroup
+    Properties: 
+      LogGroupName: !Ref TimestreamInjectorLogGroup
+
+  TimestreamInjectorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kinesis-analytics/${InjectorKinesisAnalyticsApplication}"
+      RetentionInDays: 30
+
+  InjectorKinesisAnalyticsApplication:
+    Type: AWS::KinesisAnalyticsV2::Application
+    Properties:
+      ApplicationName:
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematics-timestream-injector
+      RuntimeEnvironment: FLINK-1_13
+      ServiceExecutionRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataAnalyticsRole
+      ApplicationConfiguration:
+        ApplicationCodeConfiguration:
+          CodeContent:
+            S3ContentLocation:
+              BucketARN: "arn:aws:s3:::dev.elevateteledata"
+              FileKey: TimestreamInjectorJar/timestream-ingestion-1.0.10.jar
+          CodeContentType: 'ZIPFILE'
+        EnvironmentProperties:
+          PropertyGroups:
+            - PropertyGroupId: FlinkApplicationProperties
+              PropertyMap:
+                {
+                  Region: us-east-1,
+                  TimestreamDbName: prod-telematics-timestream,
+                  TimestreamTableName: DeviceMessageData,
+                  aws.region: us-east-1,
+                  db.connectionUrl.secret: telematics/prodrdsaccess,
+                  flink.stream.initpos: LATEST,
+                  input.stream.name: prod-telematics-processed-data-stream
+                  #db.connectionUrl: jdbc:sqlserver://prodtelematicsdb.hercrentals.com;databaseName=Telematics;username=svc_Elevate_DB;password=xxxx,
+                  #db.connectionUrl: !FindInMap [ !Ref "Environment", Layer, SecretString ]
+                }
+        FlinkApplicationConfiguration:
+          MonitoringConfiguration:
+            ConfigurationType: CUSTOM
+            LogLevel: INFO
+            MetricsLevel: TASK
+          ParallelismConfiguration:
+            AutoScalingEnabled: true
+            ConfigurationType: CUSTOM
+            Parallelism: 10
+            ParallelismPerKPU: 1
+        ApplicationSnapshotConfiguration:
+          SnapshotsEnabled: true
+
+
+  #---------------------------------------------------------------#
+  # Kinesis Data Stream for prod-gm-raw-data-delivery-stream
+  #---------------------------------------------------------------#
+
+  KinesisGMStream:
+    Type: AWS::Kinesis::Stream
+    Properties: 
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - gmapi
+      RetentionPeriodHours: 24
+      ShardCount: 3
+      StreamModeDetails: 
+        StreamMode: PROVISIONED
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - gmapi
+
+  #---------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-gm-raw-data-delivery-stream
+  #---------------------------------------------------------------#
+
+  KinesisGMRawDatadeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties: 
+      DeliveryStreamName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - gm-raw-data-delivery-stream
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          'Fn::GetAtt':
+            - KinesisGMStream
+            - Arn
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+      S3DestinationConfiguration:
+        BucketARN: 'arn:aws:s3:::prod.telematics.inartifacts'
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+        BufferingHints:
+          SizeInMBs: 5
+          IntervalInSeconds: 60 
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - gm-raw-data-delivery-stream
+
+  #---------------------------------------------------------------#
+  # Kinesis Data Stream for prod-oem-data-stream
+  #---------------------------------------------------------------#
+
+  KinesisOEMStream:
+    Type: AWS::Kinesis::Stream
+    Properties: 
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - oem
+      RetentionPeriodHours: 24
+      ShardCount: 3
+      StreamModeDetails: 
+        StreamMode: PROVISIONED
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - oem
+
+  #---------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-oem-raw-data-delivery-stream
+  #---------------------------------------------------------------#
+
+  OEMRawDataDeliveryStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-oem-raw-data-delivery-stream
+      RetentionInDays: 30
+  
+  OEMRawDataDeliveryStreamLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: OEMRawDataDeliveryStreamLogGroup
+    Properties: 
+      LogGroupName: !Ref OEMRawDataDeliveryStreamLogGroup
+
+  KinesisOEMRawDatadeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties: 
+      DeliveryStreamName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - oem-raw-data-delivery-stream
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          'Fn::GetAtt':
+            - KinesisOEMStream
+            - Arn
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+      S3DestinationConfiguration:
+        BucketARN: 'arn:aws:s3:::prod.telematics.inartifacts'
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+        Prefix: 
+          'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - 'oem-raw-data-storage'
+        BufferingHints:
+          SizeInMBs: 5
+          IntervalInSeconds: 60 
+        CloudWatchLoggingOptions: 
+          Enabled: true
+          LogGroupName: !Sub "/aws/kinesisfirehose/${OEMRawDataDeliveryStreamLogGroup}" 
+          LogStreamName: "DestinationDelivery"
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - oem-raw-data-delivery-stream
+
+  #---------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-gm-raw-data-delivery-stream
+  #---------------------------------------------------------------#
+
+  GMRawDataDeliveryStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-gm-raw-data-delivery-stream
+      RetentionInDays: 30
+  
+  GMRawDataDeliveryStreamLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: GMRawDataDeliveryStreamLogGroup
+    Properties: 
+      LogGroupName: !Ref GMRawDataDeliveryStreamLogGroup
+
+
+  KinesisGMRawDatadeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties: 
+      DeliveryStreamName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - gm-raw-data-delivery-stream
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          'Fn::GetAtt':
+            - KinesisGMStream
+            - Arn
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+      S3DestinationConfiguration:
+        BucketARN: 'arn:aws:s3:::prod.telematics.inartifacts'
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+        Prefix: 
+          'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - 'gm-raw-data-storage'
+        BufferingHints:
+          SizeInMBs: 5
+          IntervalInSeconds: 60 
+        CloudWatchLoggingOptions: 
+          Enabled: true
+          LogGroupName: !Sub "/aws/kinesisfirehose/${GMRawDataDeliveryStreamLogGroup}" 
+          LogStreamName: "DestinationDelivery"
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - gm-raw-data-delivery-stream
+                
+  #---------------------------------------------------------------#
+  # Kinesis Data Stream for prod-telematicgateway-raw-data-delivery-stream
+  #---------------------------------------------------------------#
+
+  KinesisTelematicsGatewayStream:
+    Type: AWS::Kinesis::Stream
+    Properties: 
+      Name: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - TelematicsGateway
+      RetentionPeriodHours: 24
+      ShardCount: 3
+      StreamModeDetails: 
+        StreamMode: PROVISIONED
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - TelematicsGateway
+
+  #--------------------------------------------------------------------------#
+  # Kinesis Delivery Stream for prod-telematicgateway-raw-data-delivery-stream
+  #--------------------------------------------------------------------------#
+
+  GatewayRawDataDeliveryStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: 
+        'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - telematics-gateway-raw-data-delivery-stream
+      RetentionInDays: 30
+  
+  GatewayRawDataDeliveryStreamLogStream:
+    Type: AWS::Logs::LogStream
+    DependsOn: OEMRawDataDeliveryStreamLogGroup
+    Properties: 
+      LogGroupName: !Ref GatewayRawDataDeliveryStreamLogGroup
+
+
+  KinesisTelematicsGatewayRawDatadeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties: 
+      DeliveryStreamName: 
+        'Fn::Join':
+          - '-'
+          - - Ref: Environment
+            - telematicgateway-raw-data-delivery-stream
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          'Fn::GetAtt':
+            - KinesisTelematicsGatewayStream
+            - Arn
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+      S3DestinationConfiguration:
+        BucketARN: 'arn:aws:s3:::prod.telematics.inartifacts'
+        RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-KinesisDataFirehoseRole
+        Prefix: 
+          'Fn::Join':
+            - '-'
+            - - Ref: Environment
+              - 'telematicgateway-raw-data-storage'
+        BufferingHints:
+          SizeInMBs: 5
+          IntervalInSeconds: 60 
+        CloudWatchLoggingOptions: 
+          Enabled: true
+          LogGroupName: !Sub "/aws/kinesisfirehose/${GatewayRawDataDeliveryStreamLogGroup}" 
+          LogStreamName: "DestinationDelivery"
+      Tags: 
+        - Key: "Environment"
+          Value: 
+            Ref: Environment  
+        - Key: "Application"
+          Value: "ProControl-Telematics"     
+        - Key: "ResourceType"
+          Value: "Kinesis"
+        - Key: "CostCenter"
+          Value: "9038"
+        - Key: "ITOwner"
+          Value: "Sunil Gupta"
+        - Key: "Name"
+          Value: 
+            'Fn::Join':
+              - '-'
+              - - Ref: Environment
+                - telematicgateway-raw-data-delivery-stream
