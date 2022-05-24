@@ -20,3 +20,6 @@ https://github.com/YSureshN/YSureshN-kinesis-application-deployment-automatedly
 https://github.com/YSureshN/application-properties-for-k8s-for-all-env
 
 https://github.com/YSureshN/aws-cloudformation-templates/tree/aws-cli-macro/aws/services
+
+
+https://github.com/YSureshN/AWS-Cloudformation-templates-suresh
