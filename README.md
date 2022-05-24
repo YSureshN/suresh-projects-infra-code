@@ -7,4 +7,8 @@ Global DynamoDB= https://acloudguru.com/blog/engineering/you-should-always-use-d
 
 Global Dynamo1= https://www.capitalone.com/tech/cloud/dynamodb-global-tables-with-cloudformation/
 
+https://github.com/YSureshN/Suresh-Kubernetes-latest. (Here we have all kind of Deployments and different styles)
+
+Kubernetes RBAC= https://learnk8s.io/rbac-kubernetes
+
 
