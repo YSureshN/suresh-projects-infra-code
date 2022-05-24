@@ -6,7 +6,7 @@ Parameters:
   EnvType:
     Description: 'Environment: dev,qa,stg,prod'
     Type: String
-    Default: qa
+    Default: prod
     AllowedValues:
     - dev
     - qa
@@ -17,11 +17,153 @@ Parameters:
 Resources:
 
   #-----------------------------------------------------------------------------
+  # This DynamoDB Table Name is AlertPreference
+  #-----------------------------------------------------------------------------
+
+  AlertPreference:
+    Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
+    Properties:
+      TableName:
+        'Fn::Join':
+            - '-'
+            - - Ref: EnvType
+              - AlertPreference
+      AttributeDefinitions:
+        - AttributeName: PreferenceID
+          AttributeType: S
+        - AttributeName: AccountNumber
+          AttributeType: S
+        - AttributeName: DivisionCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PreferenceID
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AccountNumber-DivisionCode-Index
+          KeySchema:
+            - AttributeName: AccountNumber
+              KeyType: HASH
+            - AttributeName: DivisionCode
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: "KMS"
+      Replicas:
+        - Region: !Ref AWS::Region
+        - Region: us-west-1
+  
+  #-----------------------------------------------------------------------------
+  # This DynamoDB Table Name is Elevate.Telematics.OTG
+  #-----------------------------------------------------------------------------
+  
+  ElevateTelematicsOTG:
+    Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
+    Properties:
+      TableName:
+        'Fn::Join':
+            - '-'
+            - - Ref: EnvType
+              - elevate.telematics.OTG
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: "KMS"
+      Replicas:
+        - Region: !Join [ "", [!Ref "AWS::Region"]]
+        - Region: us-west-1
+
+  #-----------------------------------------------------------------------------
+  # This DynamoDB Table Name is telematics
+  #-----------------------------------------------------------------------------
+  
+  telematicsdynamodb:
+    Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
+    Properties:
+      TableName:
+        'Fn::Join':
+            - '-'
+            - - Ref: EnvType
+              - telematics
+      AttributeDefinitions:
+        - AttributeName: DeviceIdentifier
+          AttributeType: S
+        - AttributeName: ReportDate
+          AttributeType: S
+      KeySchema:
+        - AttributeName: DeviceIdentifier
+          KeyType: HASH
+        - AttributeName: ReportDate
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: "KMS"
+      Replicas:
+        - Region: !Join [ "", [!Ref "AWS::Region"]]
+        - Region: us-west-1
+
+  #-----------------------------------------------------------------------------
+  # This DynamoDB Table Name is telematics.alert
+  #-----------------------------------------------------------------------------
+  
+  TelematicsAlert:
+    Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
+    Properties:
+      TableName:
+        'Fn::Join':
+            - '-'
+            - - Ref: EnvType
+              - telematics.alert
+      AttributeDefinitions:
+        - AttributeName: customerDivision
+          AttributeType: S
+        - AttributeName: triggeredTime
+          AttributeType: S
+      KeySchema:
+        - AttributeName: customerDivision
+          KeyType: HASH
+        - AttributeName: triggeredTime
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: "KMS"
+      Replicas:
+        - Region: !Join [ "", [!Ref "AWS::Region"]]
+        - Region: us-west-1
+  
+  #-----------------------------------------------------------------------------
   # This DynamoDB Table Name is telematics.alertPreference
   #-----------------------------------------------------------------------------
 
   TelematicsalertPreference:
     Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
     Properties:
       TableName:
         'Fn::Join':
@@ -50,12 +192,13 @@ Resources:
   
   TelematicsEquipmentlocations:
     Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
     Properties:
       TableName:
         'Fn::Join':
             - '-'
             - - Ref: EnvType
-              - Telematics.Equipmentlocations
+              - telematics.equipmentlocations
       AttributeDefinitions:
         - AttributeName: EquipmentIdentifier
           AttributeType: S
@@ -78,12 +221,13 @@ Resources:
   
   Telematicsgeofence:
     Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
     Properties:
       TableName:
         'Fn::Join':
             - '-'
             - - Ref: EnvType
-              - Telematics.Geofence
+              - telematics.geofence
       AttributeDefinitions:
         - AttributeName: geofenceId
           AttributeType: S
@@ -101,27 +245,53 @@ Resources:
         - Region: us-west-1
 
   #-----------------------------------------------------------------------------
-  # This DynamoDB Table Name is Elevate.Telematics.OTG
+  # This DynamoDB Table Name is Telematics.Geofence.AlertPreference
   #-----------------------------------------------------------------------------
   
-  ElevateTelematicsOTG:
+  TelematicsGeofenceAlertPreference:
     Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
     Properties:
       TableName:
         'Fn::Join':
             - '-'
             - - Ref: EnvType
-              - Elevate.Telematics.OTG
+              - telematics.geofence.alertPreference
       AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: TimeStamp
+        - AttributeName: geofenceId
           AttributeType: S
       KeySchema:
-        - AttributeName: id
+        - AttributeName: geofenceId
           KeyType: HASH
-        - AttributeName: TimeStamp
-          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: "KMS"
+      Replicas:
+        - Region: !Join [ "", [!Ref "AWS::Region"]]
+        - Region: us-west-1
+
+  #-----------------------------------------------------------------------------
+  # This DynamoDB Table Name is appsync-api-listing
+  #-----------------------------------------------------------------------------
+  
+  AppsyncApilisting:
+    Type: 'AWS::DynamoDB::GlobalTable'
+    DeletionPolicy: Retain
+    Properties:
+      TableName:
+        'Fn::Join':
+            - '-'
+            - - Ref: EnvType
+              - appsync-api-listing
+      AttributeDefinitions:
+        - AttributeName: method_alias_name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: method_alias_name
+          KeyType: HASH
       BillingMode: PAY_PER_REQUEST
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
