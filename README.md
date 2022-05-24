@@ -14,5 +14,8 @@ Kubernetes RBAC= https://learnk8s.io/rbac-kubernetes
 https://github.com/YSureshN/Kubernetes-ingress-ALB-EKS
 
 
+https://github.com/YSureshN/YSureshN-kinesis-application-deployment-automatedly
 
+
+https://github.com/YSureshN/application-properties-for-k8s-for-all-env
 
