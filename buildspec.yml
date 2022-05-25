@@ -1,0 +1,38 @@
+version: 0.2
+env:
+  secrets-manager:
+    sonar_username: "SonarQubeUserSecret-4xxxxxxxx9LNs:username"
+    sonar_password: "SonarQubeUserSecret-4AxxxxxxxxLNs:password"
+    db_connection: "telexxxxx/elevate:qa"
+    fortify_SSC_CIToken: "telematics/fortifyssc:CIToken"
+  variables:
+    repo_name: "telematics.geofenceDispatcher"
+    fortify_app_version_id: "14"
+phases:
+  pre_build:
+    commands:
+      - echo Scanning through Fortify.....
+    #  - bash -x fortify_sast_local_java_template.bash
+      - echo sonarqube pre_build_steps
+      - sonar_host_url="https://sonarqube.hercrentals.com"
+      - TAG="1-0-SNAPSHOT-$CODEBUILD_BUILD_NUMBER-$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)"
+      - IMAGE_TAG=${TAG:=latest}
+  build:
+    commands: 
+      - echo Build started on `date`
+      - echo Scanning through Fortify....
+      - export CODEARTIFACT_AUTH_TOKEN=`aws codeartifact get-authorization-token --domain telematics-domain --domain-owner 5672xxx020xx --query authorizationToken --output text` 
+      - echo $CODEARTIFACT_AUTH_TOKEN
+      - mvn clean 
+      - mvn -s codebuild-maven-settings.xml install sonar:sonar -Dsonar.projectKey=$repo_name -Dsonar.host.url=$sonar_host_url -Dsonar.login=$sonar_username -Dsonar.password=$sonar_password -DskipTests=false
+      - aws s3 cp target/telematics.geofenceDispatcher-1.0-SNAPSHOT.jar s3://dev.telematics.inartifacts/lambda_function/geofence-dispatcher-lambda/telematics.geofenceDispatcher-${IMAGE_TAG}.jar
+      - aws s3 cp target/telematics.geofenceDispatcher-1.0-SNAPSHOT.jar s3://dev.telematics.inartifacts/lambda_function/geofence-dispatcher-lambda/telematics.geofenceDispatcher-latest.jar
+      - aws lambda update-function-code --function-name dev-telematics-geofence-dispatcher --s3-bucket dev.telematics.inartifacts --s3-key lambda_function/geofence-dispatcher-lambda/telematics.geofenceDispatcher-latest.jar
+      
+artifacts:
+  files:
+    - target/telematics.geofenceDispatcher-1.0-SNAPSHOT.jar
+  discard-paths: yes
+cache:
+  paths:
+  - '/root/.m2/**/*'
