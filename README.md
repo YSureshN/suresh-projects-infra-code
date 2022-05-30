@@ -40,3 +40,7 @@ Blob= https://dheeraj3choudhary.com/stream-aws-cloudwatch-logs-to-amazon-opensea
 AWS VPN = https://github.com/aws-samples/aws-ncsc-vpn-configurations
 
 =============
+
+https://github.com/YSureshN/all-instalation/blob/master/AWS-all
+
+==========
