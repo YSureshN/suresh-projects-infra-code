@@ -29,7 +29,7 @@ https://github.com/YSureshN/AWS-Cloudformation-templates-suresh
 
 AWS Opemserch for VPC Flow Logs
 
-Public = 
+Public = https://www.youtube.com/watch?v=trFW03zP7Uw
 
 Private= https://www.youtube.com/watch?v=trI2RzlU-iY
 Blob= https://dheeraj3choudhary.com/stream-aws-cloudwatch-logs-to-amazon-opensearch-service-successor-to-amazon-elasticsearch-service
