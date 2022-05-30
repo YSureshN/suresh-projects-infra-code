@@ -34,6 +34,11 @@ Public = https://www.youtube.com/watch?v=trFW03zP7Uw
 Private= https://www.youtube.com/watch?v=trI2RzlU-iY
 Blob= https://dheeraj3choudhary.com/stream-aws-cloudwatch-logs-to-amazon-opensearch-service-successor-to-amazon-elasticsearch-service
 
+=================
+
+AWS Goldem AMI = https://aws.amazon.com/blogs/security/how-to-set-up-continuous-golden-ami-vulnerability-assessments-with-amazon-inspector/
+
+Github Link= https://s3.amazonaws.com/awsiammedia/public/sample/GoldenAMIContinuousVulnerabilityAssessment/GoldenAMIs_template.json
 
 =================
 
