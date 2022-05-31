@@ -78,6 +78,13 @@ Download Kibana: https://www.elastic.co/downloads/kibana
 GitHub: https://github.com/Java-Techie-jt/elk... 
 Blogs: https://medium.com/@javatechie
 
+======================================
+
+AWS EFS for Multi Lambda's
+
+blob= https://aws.amazon.com/blogs/aws/new-a-shared-file-system-for-your-lambda-functions/
+
+Video= https://www.youtube.com/watch?v=65zzmAd4u4Q&t=759s
 
 ======================================
 
