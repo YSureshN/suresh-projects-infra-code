@@ -1,3 +1,8 @@
+# Aws pinpoint
+
+https://github.com/YSureshN/aws-Pinpont.git
+
+
 # suresh-projects-infra-code
 suresh-projects-infra-code in CFN
 
