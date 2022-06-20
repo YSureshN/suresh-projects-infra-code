@@ -79,8 +79,8 @@ Mappings:
   prod:
     Layer:
       "VpcId": "vpc-e8ece28c"
-      "SubnetId1": "subnet-ca7e0bbc"
-      "SubnetId2": "subnet-939d27b9"
+      "SubnetId1": "subnet-003a7212aaed0e083"
+      "SubnetId2": "subnet-0fce4357"
       "PubSubnetId1": "subnet-cb7e0bbd"
       "PubSubnetId2": "subnet-0ece4356"
       "RDSSecurityGroup": "sg-96aa31ee"
@@ -174,7 +174,7 @@ Resources:
         EndpointPublicAccess: false
         EndpointPrivateAccess: true
       RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-EKSclusterRole
-      Version: "1.21"
+      Version: "1.22"
       Tags:
         - Key: Name
           Value: !Join [".", [!Ref EnvType, !Ref ApplicationName, "EKS-Cluster"]]
@@ -193,7 +193,37 @@ Resources:
   # This CloudFormation Script EKS Node Group and Autoscaling Maping to above EKS Cluster
   #-----------------------------------------------------------------------------
   
-  EKSNodegroup:
+  # EKSNodegroup:
+  #   Type: 'AWS::EKS::Nodegroup'
+  #   DependsOn: EKSCluster
+  #   Properties:
+  #     ClusterName: !Ref EKSCluster
+  #     NodegroupName: 
+  #       'Fn::Join':
+  #           - '-'
+  #           - - Ref: EnvType
+  #             - elevatetelematics-ms-nodegroup
+  #     NodeRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-EKSNodeGroupRole
+  #     DiskSize: 100
+  #     InstanceTypes:
+  #       - t3.large
+  #     ScalingConfig:
+  #       MinSize: 3
+  #       DesiredSize: 3
+  #       MaxSize: 3
+  #     Labels:
+  #       Key1: nodegroup-1
+  #     Subnets:
+  #       - !FindInMap [ !Ref "EnvType", Layer, SubnetId1 ]
+  #       - !FindInMap [ !Ref "EnvType", Layer, SubnetId2 ]
+  #     Tags:
+  #       ParkMyCloud: FALSE
+
+  #-----------------------------------------------------------------------------
+  # This CloudFormation Script EKS Node Group and Autoscaling Maping to above EKS Cluster
+  #-----------------------------------------------------------------------------
+  
+  EKSNodegroupone:
     Type: 'AWS::EKS::Nodegroup'
     DependsOn: EKSCluster
     Properties:
@@ -202,19 +232,74 @@ Resources:
         'Fn::Join':
             - '-'
             - - Ref: EnvType
-              - elevatetelematics-ms-nodegroup
+              - elevate-telematics-ms-nodegroup
       NodeRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Telematics-EKSNodeGroupRole
       DiskSize: 100
       InstanceTypes:
-        - t3.large
+        - m5.2xlarge
       ScalingConfig:
-        MinSize: 3
-        DesiredSize: 3
-        MaxSize: 3
+        MinSize: 2
+        DesiredSize: 2
+        MaxSize: 8
       Labels:
-        Key1: nodegroup-1
+        Key1: nodegroup-2
       Subnets:
         - !FindInMap [ !Ref "EnvType", Layer, SubnetId1 ]
         - !FindInMap [ !Ref "EnvType", Layer, SubnetId2 ]
       Tags:
         ParkMyCloud: FALSE
+        
+  #-----------------------------------------------------------------------------
+  # Amazon prod-EKSCluster Autoscaler Role
+  #-----------------------------------------------------------------------------
+  
+  TelematicsProdAmazonEKSClusterAutoscalerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - '{
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "${OpenIdConnectIssuer}:aud": "sts.amazonaws.com",
+                      "${OpenIdConnectIssuer}:sub": "system:serviceaccount:kube-system:cluster-autoscaler"
+                    }
+                  },
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OpenIdConnectIssuer}"
+                  }
+                }
+              ]
+            }'
+          - { OpenIdConnectIssuer: !Select [1, !Split ["//", !GetAtt EKSCluster.OpenIdConnectIssuerUrl]] }
+          #- { OpenIdConnectIssuer: "oidc.eks.us-east-1.amazonaws.com/id/D4F08DB1D370492C6B52599346BE518E" }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      RoleName: prod-AmazonEKSClusterAutoscalerRole
+  
+  AmazonEKSClusterAutoscalerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      Description: Managed Policy to codebuild Role
+      ManagedPolicyName: TelematicsCodebuildMicroServicebuildallPolicy
+      Path: /
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - autoscaling:SetDesiredCapacity
+              - autoscaling:TerminateInstanceInAutoScalingGroup
+              - autoscaling:DescribeAutoScalingInstances
+              - autoscaling:DescribeAutoScalingGroups
+              - ec2:DescribeLaunchTemplateVersions
+              - autoscaling:DescribeTags
+              - autoscaling:DescribeLaunchConfigurations
+            Resource: '*'
+      Roles: 
+        - !Ref TelematicsProdAmazonEKSClusterAutoscalerRole
