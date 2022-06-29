@@ -1,3 +1,6 @@
+https://github.com/aws-samples/golden-ami-pipeline-with-qualys. ()
+
+
 # Aws pinpoint
 
 https://github.com/YSureshN/aws-Pinpont.git
