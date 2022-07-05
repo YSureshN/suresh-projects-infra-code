@@ -1,3 +1,10 @@
+S3 Bucket Policy
+
+How can I allow only certain file types to be uploaded to my Amazon S3 bucket?
+
+https://aws.amazon.com/premiumsupport/knowledge-center/s3-allow-certain-file-types/
+
+
 https://github.com/aws-samples/golden-ami-pipeline-with-qualys. ()
 
 
