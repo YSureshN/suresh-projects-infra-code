@@ -1,3 +1,11 @@
+Buildspec.yml
+
+https://ruddra.com/aws-codebuild-use-git-tags/
+
+https://medium.com/maestral-solutions/create-git-tags-in-the-form-of-semantic-build-numbers-using-aws-codebuild-and-aws-codepipeline-e52210d719df
+
+=====================================================
+
 S3 Bucket Policy
 
 How can I allow only certain file types to be uploaded to my Amazon S3 bucket?
