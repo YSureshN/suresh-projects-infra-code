@@ -4,6 +4,10 @@ https://ruddra.com/aws-codebuild-use-git-tags/
 
 https://medium.com/maestral-solutions/create-git-tags-in-the-form-of-semantic-build-numbers-using-aws-codebuild-and-aws-codepipeline-e52210d719df
 
+https://dev.to/awscommunity-asean/tag-based-monorepo-docker-image-build-on-aws-1bja
+
+https://stackoverflow.com/questions/1404796/how-can-i-get-the-latest-tag-name-in-current-branch-in-git
+
 =====================================================
 
 S3 Bucket Policy
