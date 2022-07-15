@@ -1,3 +1,10 @@
+Cloudformation Deployment with different account through Codepipeline
+
+- https://levelup.gitconnected.com/automate-cross-account-cloudformation-deployment-using-aws-codepipeline-c71d81b45722
+
+
+---------
+
 Buildspec.yml
 
 https://ruddra.com/aws-codebuild-use-git-tags/
