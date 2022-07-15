@@ -8,6 +8,8 @@ https://dev.to/awscommunity-asean/tag-based-monorepo-docker-image-build-on-aws-1
 
 https://stackoverflow.com/questions/1404796/how-can-i-get-the-latest-tag-name-in-current-branch-in-git
 
+https://github.com/teer823/monorepo-aws-docker.  (From Github to git tags)
+
 =====================================================
 
 S3 Bucket Policy
