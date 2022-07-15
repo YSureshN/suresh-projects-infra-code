@@ -1,6 +1,7 @@
 Cloudformation Deployment with different account through Codepipeline
 
 - https://levelup.gitconnected.com/automate-cross-account-cloudformation-deployment-using-aws-codepipeline-c71d81b45722
+- https://aws.amazon.com/blogs/devops/building-a-ci-cd-pipeline-for-cross-account-deployment-of-an-aws-lambda-api-with-the-serverless-framework/
 
 
 ---------
